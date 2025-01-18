@@ -12,7 +12,7 @@ typedef std::map<int,float>     mif_t;
 
 const int kNplanes  = 3;  
 
-namespace blip {
+namespace blipobj {
   
   //###################################################
   //  Data structures
@@ -43,7 +43,9 @@ namespace blip {
     TVector3 endPoint;
     TVector3 position;
   };
+
   
+
   // True energy depositions
   struct TrueBlip {
     int       ID            = -9;     // unique blip ID
@@ -92,7 +94,7 @@ namespace blip {
     float g4frac        = -99;      
     float g4energy      = -999;     // [MeV]
   };
-  
+
   struct HitClust {
     int     ID              = -9;
     bool    isValid         = false;
@@ -129,10 +131,9 @@ namespace blip {
     si_t    Wires;
     si_t    Chans;
     si_t    G4IDs;
-    
     std::map<int,TVector3> IntersectLocations;
   };
-
+  
   struct Blip {
     
     int       ID              = -9;         // Blip ID / index
@@ -142,24 +143,25 @@ namespace blip {
     int       MaxWireSpan     = -9;         // Maximum span of wires on any plane cluster
     float     Charge          = -9;         // Charge on calorimetry plane
     float     Energy          = -999;       // Energy (const dE/dx, fcl-configurable)
-    float     EnergyESTAR     = -999;       // Energy (ESTAR method from ArgoNeuT)
+    float     EnergyCorr      = -999;       // Energy following SCE / lifetime correction
     float     Time            = -999;       // Drift time [ticks]
-    float     ProxTrkDist     = -9;         // Distance to cloest track
+    float     ProxTrkDist     = -9;         // Distance to closest track
     int       ProxTrkID       = -9;         // ID of closest track
     bool      inCylinder      = false;      // Is it in a cone/cylinder region? 
     int       TouchTrkID      = -9;         // Track ID of track that is touched
 
     TVector3  Position;                     // 3D position TVector3
+    TVector3  PositionSCE;                  // 3D position following SCE spatial correction
     float     SigmaYZ         = -9.;        // Uncertainty in YZ intersect [cm]
     float     dX              = -9;         // Equivalent length along drift direction [cm] 
     float     dYZ             = -9;         // Approximate length scale in YZ space [cm]
                                             // (also referred to as 'dW')
 
     // Plane/cluster-specific information
-    blip::HitClust clusters[kNplanes];
+    blipobj::HitClust clusters[kNplanes];
 
     // Truth-matched energy deposition
-    blip::TrueBlip truth;
+    blipobj::TrueBlip truth;
     
     // Prototype getter functions
     double X() { return Position.X(); }
@@ -170,4 +172,40 @@ namespace blip {
   
 }
 
+// Prototype data product that can serve as a "lighter"
+// blip object to store in artROOT events if we run into
+// file size issues using the default object above.
+/*
+namespace blpobj {
+  
+  struct Blip {
+    int       ID            = -9;   // Blip ID / index
+    int       TPC           = -9;   // TPC
+    int       NPlanes       = -9;   // Num. matched planes
+    TVector3  Location;             // Reconstructed XYZ
+    TVector3  LocationSCE;          // Reconstructed XYZ w/SCE offset corrections applied
+    float     Charge        = -9;   // Charge on calorimetry plane
+    float     ChargeCorr    = -9;   // Charge w/SCE and lifetime corrections
+    float     Energy        = -999; // Energy (const dE/dx, fcl-configurable)
+    float     EnergyCorr    = -999;
+    float     ProxTrkDist   = -9;   // Distance to closest track
+    int       ProxTrkID     = -9;   // ID of closest track
+    int       TouchTrkID    = -9;   // Track ID of track that is touched
+ 
+    blipobj::HitClust hitcluster2D[kNplanes];
+    
+    float     trueEnergy    = 0;    // Truth-matched energy dep [MeV]
+    int       trueCharge    = 0;    // Truth-matched deposited electrons
+    int       trueG4ID      = -9;   // Truth-matched lead G4 track ID
+    int       truePDG       = -9;   // Truth-matched lead G4 PDG
+
+    // To add:
+    //  x nwires per plane
+    //  x location w/SCE corrections
+    //  x energy w/lifetime+SCE corrections
+    //  x flag for dead wire adjacency --> possible thru 'cluster'
+    //  x flag for "noisy" wire adjacency --> possible thru 'cluster'
+  };
+}
+*/
 

@@ -54,7 +54,7 @@ physics:
 
   producers: {
     blipreco3D: {
-      module_type: "BlipReco3D"
+      module_type: "BlipRecoProducer"
       BlipAlg:     @local::microboone_blipalg
     }
   }
@@ -64,7 +64,6 @@ physics:
   #}
   
   reco:           [ blipreco3D ]
-  #ana:            [ blipana ]
   trigger_paths:  [ reco ] 
   stream1:        [ out1 ] 
   end_paths:      [ stream1 ]
@@ -81,7 +80,7 @@ outputs:
     fileName:    "%ifb_blipreco3D.root"
     dataTier:    "reconstructed"
     fastCloning: false
-    compressionLevel: 1
+    #compressionLevel: 1
     #SelectEvents: [reco]
   }
 }

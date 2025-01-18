@@ -1,0 +1,7 @@
+#include "particleinventoryservice.fcl"
+#include "wirecell_g4_uboone.fcl"
+
+#include "be_quiet.fcl"
+
+source.maxEvents: -1
+

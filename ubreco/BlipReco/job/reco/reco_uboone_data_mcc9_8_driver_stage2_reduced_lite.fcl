@@ -1,0 +1,6 @@
+#include "reco_uboone_data_mcc9_8_driver_stage2_reduced.fcl"
+
+services.scheduler.SkipEvent: [ ProductNotFound ]
+
+# Don't write huge metadata files
+microboone_tfile_metadata.GenerateTFileMetadata: [ true, false ]

@@ -84,20 +84,15 @@ BlipReco3D::BlipReco3D(fhicl::ParameterSet const & pset)
   // Read in fcl parameters for blip reco alg
   fhicl::ParameterSet pset_blipalg = pset.get<fhicl::ParameterSet>("BlipAlg");
   fBlipAlg        = new blip::BlipRecoAlg( pset_blipalg );
-  
-  fHitProducer    = pset_blipalg.get<std::string>   ("HitProducer");
+  fHitProducer    = pset_blipalg.get<std::string>   ("HitProducer","gaushit");
  
-  // declare what we're going to produce
+  // produce spacepoints and 'hit <--> spacepoint' associations
   produces< std::vector<  recob::SpacePoint > >();
   produces< art::Assns <  recob::Hit, recob::SpacePoint> >();
   
-  //produces< std::vector<  blip::Blip > >();
-  //produces< art::Assns <  recob::SpacePoint,  blip::Blip> >();
-  //produces< art::Assns <  recob::Hit,         blip::Blip> >();
-
-  //produces< std::vector<  recob::Cluster    > >();
-  //produces< art::Assns <  recob::Cluster,   recob::SpacePoint> >();
-  //produces< art::Assns <  recob::Hit,       recob::Cluster> >();
+  // produce blips and 'hit <--> blip' associations
+  produces< std::vector<  blipobj::Blip > >();
+  produces< art::Assns <  recob::Hit, blipobj::Blip> >();
   
 }
 
@@ -120,7 +115,8 @@ void BlipReco3D::produce(art::Event & evt)
   std::unique_ptr< std::vector< recob::SpacePoint> > SpacePoint_v(new std::vector<recob::SpacePoint>);
   std::unique_ptr< art::Assns <recob::Hit, recob::SpacePoint> >  assn_hit_sps_v(new art::Assns<recob::Hit,recob::SpacePoint> );
 
-  //std::unique_ptr< std::vector< blip::Blip > > Blip_v(new std::vector<blip::Blip>);
+  std::unique_ptr< std::vector< blipobj::Blip > > Blip_v(new std::vector<blipobj::Blip>);
+  std::unique_ptr< art::Assns <recob::Hit, blipobj::Blip> >  assn_hit_blip_v(new art::Assns<recob::Hit,blipobj::Blip> );
   
   //============================================
   // Get hits from input module
@@ -136,25 +132,36 @@ void BlipReco3D::produce(art::Event & evt)
   //============================================
   fBlipAlg->RunBlipReco(evt);
   
-  
   //===========================================
-  // Make blip::Blips
-  //===========================================
-  /*
-  for(size_t i=0; i<fBlipAlg->blips.size(); i++){
-    auto& b = fBlipAlg->blips[i];
-    blip::Blip nb = b;
-    Blip_v->emplace_back(nb);
-  }
-  */
-  
-  
-  //===========================================
-  // Make recob::SpacePoints out of the blip::Blips
+  // Make recob::SpacePoints and objects
   //===========================================
   for(size_t i=0; i<fBlipAlg->blips.size(); i++){
     auto& b = fBlipAlg->blips[i];
     
+    if( !b.isValid ) continue;
+
+    /*
+    // Save a custom blip object containing only the 
+    // most relevant info for this particular blip
+    blipobj::Blip nb;
+    nb.ID       = b.ID;
+    nb.TPC      = b.TPC;
+    nb.NPlanes  = b.NPlanes;
+    nb.Position = b.Position;
+    //nb.Y        = b.Position.Y();
+    //nb.Z        = b.Position.Z();
+    nb.Charge   = b.Charge;
+    nb.Energy   = b.Energy;
+    nb.trueEnergy = b.truth.Energy;
+    nb.trueCharge = b.truth.DepElectrons;
+    nb.trueG4ID   = b.truth.LeadG4ID;
+    nb.truePDG    = b.truth.LeadG4PDG;
+    Blip_v->emplace_back(nb);
+    */
+    
+    Blip_v->emplace_back(b);
+   
+
     Double32_t xyz[3];
     Double32_t xyz_err[6];
     Double32_t chiSquare = 0;
@@ -172,14 +179,16 @@ void BlipReco3D::produce(art::Event & evt)
     recob::SpacePoint newpt(xyz,xyz_err,chiSquare);
     SpacePoint_v->emplace_back(newpt);
     
-    
     // Hit associations 
     for(auto& hc : b.clusters ) {
       for(auto& ihit : hc.HitIDs ) {
         auto& hitptr = hitlist[ihit];
         util::CreateAssn(*this, evt, *SpacePoint_v, hitptr, *assn_hit_sps_v);
+        util::CreateAssn(*this, evt, *Blip_v,       hitptr, *assn_hit_blip_v); 
       }
     }
+   
+    
   
   }
     
@@ -189,7 +198,8 @@ void BlipReco3D::produce(art::Event & evt)
   evt.put(std::move(SpacePoint_v));
   evt.put(std::move(assn_hit_sps_v));
   
-  //evt.put(std::move(Blip_v));
+  evt.put(std::move(Blip_v));
+  evt.put(std::move(assn_hit_blip_v));
 
 }//END EVENT LOOP
 

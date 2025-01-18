@@ -25,19 +25,23 @@
 #include "messagefacility/MessageLogger/MessageLogger.h"
 
 // LArSoft includes
+#include "lardata/RecoBaseProxy/ProxyBase.h"
 #include "lardataobj/RecoBase/Track.h"
 #include "lardataobj/RecoBase/SpacePoint.h"
 #include "lardataobj/RecoBase/Hit.h"
+#include "lardataobj/RecoBase/PFParticleMetadata.h"
 #include "lardataobj/AnalysisBase/Calorimetry.h"
-#include "cetlib/search_path.h"
 
 // MicroBooNE-specific includes
 #include "ubevt/Database/UbooneElectronLifetimeProvider.h"
 #include "ubevt/Database/UbooneElectronLifetimeService.h"
 #include "larevt/SpaceChargeServices/SpaceChargeService.h"
 #include "ubreco/BlipReco/Alg/BlipRecoAlg.h"
+#include "ubana/ubana/searchingfornues/Selection/SelectionTools/SelectionToolBase.h"
+#include "ubana/ubana/searchingfornues/Selection/AnalysisTools/AnalysisToolBase.h"
 
 // C++ includes
+#include "cetlib/search_path.h"
 #include <cstring>
 #include <utility>
 #include <string>
@@ -92,6 +96,7 @@ class BlipAnaTreeDataStruct
 
   // --- Configurations and switches ---
   std::string treeName      = "anatree";
+  bool  loadBlipsFromFile   = true;
   bool  saveTruthInfo       = true;
   bool  saveTrueEDeps       = true;
   bool  savePrimaries       = false;
@@ -101,59 +106,65 @@ class BlipAnaTreeDataStruct
   bool  saveClustInfo       = true;
 
   // --- Event information ---   
-  int           event;                // event number
-  int           run;                  // run number
-  int           subrun;               // subrun number
-  unsigned int  timestamp;            // unix time of event
-  float         lifetime;             // electron lifetime
-  int           badchans;             // #bad chans according to wirecell
-  int           longtrks;             // tracks > 5 cm
-  
+  int           event;          // event number
+  int           run;            // run number
+  int           subrun;         // subrun number
+  unsigned int  timestamp;      // unix time of event
+  float         lifetime;       // electron lifetime
+  int           badchans;       // #bad chans according to wirecell
+  int           longtrks;       // tracks > 5 cm
+ 
+  // --- MCTruth neutrino info ---
+  int   mctruth_nu_pdg;         // Neutrino PDG (if present, otherwise = 0)
+  int   mctruth_nu_ccnc;        // CC (0) or NC (1)
+  int   mctruth_nu_mode;        // interaction mode from Genie
+  float mctruth_nu_vtx_x;       // vertex X 
+  float mctruth_nu_vtx_y;       // vertex Y
+  float mctruth_nu_vtx_z;       // vertex Z
+  float mctruth_nu_KE;          // kinetic energy
+
   // --- Primary particles ---
   // these are grabbed from the G4 MCParticles
   // list with more details saved (XYZ, P, etc)
-  int   nprimaries;
-  int   primary_trackID[kMaxG4];
-  int   primary_pdg[kMaxG4];
-  float primary_x0[kMaxG4];
-  float primary_y0[kMaxG4];
-  float primary_z0[kMaxG4];
-  float primary_Px[kMaxG4];
-  float primary_Py[kMaxG4];
-  float primary_Pz[kMaxG4];
-  float primary_T0[kMaxG4];
-  float primary_xAV[kMaxG4];
-  float primary_yAV[kMaxG4];
-  float primary_zAV[kMaxG4];
+  int   nprimaries;             // number of generated primary particles      
+  int   primary_trackID[kMaxG4];// geant4 track ID
+  int   primary_pdg[kMaxG4];    // PDG code
+  float primary_x0[kMaxG4];     // starting X [cm]
+  float primary_y0[kMaxG4];     // starting y [cm]
+  float primary_z0[kMaxG4];     // starting z [cm]
+  float primary_Px[kMaxG4];     // momentum in X [MeV/c]
+  float primary_Py[kMaxG4];     // momentum in Y [MeV/c]
+  float primary_Pz[kMaxG4];     // momentum in z [MeV/c]
+  float primary_T0[kMaxG4];     // time of generation
 
   // --- G4 information ---
   int   nparticles;               // number of G4 particles
-  bool  part_isPrimary[kMaxG4];        // is primary particle
-  int   part_trackID[kMaxG4];          // G4 track ID
-  int   part_pdg[kMaxG4];              // PDG
-  int   part_nDaughters[kMaxG4];       // number of daughters
-  int   part_mother[kMaxG4];           // mother particle
-  float part_E[kMaxG4];                // initial energy (MeV)
-  float part_KE[kMaxG4];               // initial kinetic energy (MeV)
-  float part_endE[kMaxG4];             // final energy (MeV)
-  float part_endKE[kMaxG4];             // final energy (MeV)
-  float part_mass[kMaxG4];             // mass (MeV)
-  float part_P[kMaxG4];                // momentum (MeV)
-  float part_Px[kMaxG4];               // momentum x (MeV)
-  float part_Py[kMaxG4];               // momentum y (MeV)
-  float part_Pz[kMaxG4];               // momentum z (MeV)
-  float part_startPointx[kMaxG4];      // starting x (cm)
-  float part_startPointy[kMaxG4];      // starting y (cm)
-  float part_startPointz[kMaxG4];      // starting y (cm)
-  float part_endPointx[kMaxG4];        // ending x (cm)
-  float part_endPointy[kMaxG4];        // ending y (cm)
-  float part_endPointz[kMaxG4];        // ending y (cm)
-  float part_startT[kMaxG4];           // starting time (us)
-  float part_endT[kMaxG4];             // ending time (us)
-  float part_pathlen[kMaxG4];          // path length (cm)
-  int   part_numTrajPts[kMaxG4];       // number traj points
-  float part_depEnergy[kMaxG4];        // energy deposited in AV (MeV)
-  int   part_depElectrons[kMaxG4];     // electrons deposited
+  bool  part_isPrimary[kMaxG4];   // is primary particle
+  int   part_trackID[kMaxG4];     // G4 track ID
+  int   part_pdg[kMaxG4];         // PDG
+  int   part_nDaughters[kMaxG4];  // number of daughters
+  int   part_mother[kMaxG4];      // mother particle
+  float part_E[kMaxG4];           // initial energy (MeV)
+  float part_KE[kMaxG4];          // initial kinetic energy (MeV)
+  float part_endE[kMaxG4];        // final energy (MeV)
+  float part_endKE[kMaxG4];        // final energy (MeV)
+  float part_mass[kMaxG4];        // mass (MeV)
+  float part_P[kMaxG4];           // momentum (MeV)
+  float part_Px[kMaxG4];          // momentum x (MeV)
+  float part_Py[kMaxG4];          // momentum y (MeV)
+  float part_Pz[kMaxG4];          // momentum z (MeV)
+  float part_startPointx[kMaxG4]; // starting x (cm)
+  float part_startPointy[kMaxG4]; // starting y (cm)
+  float part_startPointz[kMaxG4]; // starting y (cm)
+  float part_endPointx[kMaxG4];   // ending x (cm)
+  float part_endPointy[kMaxG4];   // ending y (cm)
+  float part_endPointz[kMaxG4];   // ending y (cm)
+  float part_startT[kMaxG4];      // starting time (us)
+  float part_endT[kMaxG4];        // ending time (us)
+  float part_pathlen[kMaxG4];     // path length (cm)
+  int   part_numTrajPts[kMaxG4];  // number traj points
+  float part_depEnergy[kMaxG4];   // energy deposited in AV (MeV)
+  int   part_depElectrons[kMaxG4];// electrons deposited
   std::vector<std::string> part_process;// process name
 
   // --- True energy deposit info (derived from SimChannels and SimEnergyDeposits) ---
@@ -216,6 +227,7 @@ class BlipAnaTreeDataStruct
   int   trk_id[kMaxTrks];         // trackID
   int   trk_npts[kMaxTrks];       // number 3D trajectory points
   bool  trk_isMC[kMaxTrks];       // 10% of track hits matched to MC
+  int   trk_g4id[kMaxTrks];       // G4 track ID of this reconstructed track 
   float trk_length[kMaxTrks];     // track length [cm]
   float trk_startx[kMaxTrks];     // starting X coordinate
   float trk_starty[kMaxTrks];     // starting Y coordinate
@@ -282,6 +294,10 @@ class BlipAnaTreeDataStruct
   bool  blip_incylinder[kMaxBlips];   // is blip within a cylinder near a track
   int   blip_clustid[kNplanes][kMaxBlips];     // cluster ID per plane
   
+  // --- Neutrino information --
+  
+
+
   TTree*  calibTree;
   int     acptrk_npts;
   float   acptrk_theta_xz;
@@ -301,7 +317,15 @@ class BlipAnaTreeDataStruct
     longtrks              = -99;
     timestamp             = -999;
     //timestamp_hr          = -999;
-   
+    
+    mctruth_nu_pdg    = 0;
+    mctruth_nu_ccnc   = -9;
+    mctruth_nu_mode   = -9;
+    mctruth_nu_vtx_x  = -999;
+    mctruth_nu_vtx_y  = -999;
+    mctruth_nu_vtx_z  = -999;
+    mctruth_nu_KE     = -999;
+
     /*
     nprimaries            = 0;    // --- G4 primaries ---
     FillWith(primary_trackID, -999);
@@ -313,9 +337,6 @@ class BlipAnaTreeDataStruct
     FillWith(primary_Py,  -999.);
     FillWith(primary_Pz,  -999.);
     FillWith(primary_T0,  -99999.);
-    FillWith(primary_xAV,  -999.);
-    FillWith(primary_yAV,  -999.);
-    FillWith(primary_zAV,  -999.);
     */
 
     nparticles            = 0;    // --- G4 particles ---
@@ -399,6 +420,7 @@ class BlipAnaTreeDataStruct
       FillWith(trk_npts,    -999); 
       FillWith(trk_length,  -999);    
       FillWith(trk_isMC,    false);      
+      FillWith(trk_g4id,    -999);      
       FillWith(trk_startx,  -999);    
       FillWith(trk_starty,  -999);    
       FillWith(trk_startz,  -999);    
@@ -512,6 +534,7 @@ class BlipAnaTreeDataStruct
       evtTree->Branch("trk_id",trk_id,"trk_id[ntrks]/I");       
       evtTree->Branch("trk_length",trk_length,"trk_length[ntrks]/F");
       evtTree->Branch("trk_isMC",trk_isMC,"trk_isMC[ntrks]/O");
+      evtTree->Branch("trk_g4id",trk_g4id,"trk_g4id[ntrks]/I");
       evtTree->Branch("trk_startx",trk_startx,"trk_startx[ntrks]/F");
       evtTree->Branch("trk_starty",trk_starty,"trk_starty[ntrks]/F");
       evtTree->Branch("trk_startz",trk_startz,"trk_startz[ntrks]/F");
@@ -577,6 +600,14 @@ class BlipAnaTreeDataStruct
     
     if( saveTruthInfo ) {
       
+      evtTree->Branch("mctruth_nu_pdg",&mctruth_nu_pdg,"mctruth_nu_pdg/I");
+      evtTree->Branch("mctruth_nu_ccnc",&mctruth_nu_ccnc,"mctruth_nu_ccnc/I");
+      evtTree->Branch("mctruth_nu_mode",&mctruth_nu_mode,"mctruth_nu_mode/I");
+      evtTree->Branch("mctruth_nu_vtx_x",&mctruth_nu_vtx_x,"mctruth_nu_vtx_x/F");
+      evtTree->Branch("mctruth_nu_vtx_y",&mctruth_nu_vtx_y,"mctruth_nu_vtx_y/F");
+      evtTree->Branch("mctruth_nu_vtx_z",&mctruth_nu_vtx_z,"mctruth_nu_vtx_z/F");
+      evtTree->Branch("mctruth_nu_KE",&mctruth_nu_KE,"mctruth_nu_KE/F");
+      
       if( savePrimaries ) {
       evtTree->Branch("nprimaries",&nprimaries,"nprimaries/I");
       evtTree->Branch("primary_trackID",primary_trackID,"primary_trackID[nprimaries]/I");
@@ -587,9 +618,6 @@ class BlipAnaTreeDataStruct
       evtTree->Branch("primary_x0",primary_x0,"primary_x0[nprimaries]/F");
       evtTree->Branch("primary_y0",primary_y0,"primary_y0[nprimaries]/F");
       evtTree->Branch("primary_z0",primary_z0,"primary_z0[nprimaries]/F");
-      evtTree->Branch("primary_xAV",primary_xAV,"primary_xAV[nprimaries]/F");
-      evtTree->Branch("primary_yAV",primary_yAV,"primary_yAV[nprimaries]/F");
-      evtTree->Branch("primary_zAV",primary_zAV,"primary_zAV[nprimaries]/F");
       evtTree->Branch("primary_T0",primary_T0,"primary_T0[nprimaries]/F");
       }
       
@@ -686,10 +714,10 @@ class BlipAna : public art::EDAnalyzer
 
   private:
   void    PrintParticleInfo(size_t);
-  void    PrintTrueBlipInfo(const blip::TrueBlip&);
-  void    PrintClusterInfo(const blip::HitClust&);
-  void    PrintHitInfo(const blip::HitInfo&);
-  void    PrintBlipInfo(const blip::Blip&);
+  void    PrintTrueBlipInfo(const blipobj::TrueBlip&);
+  void    PrintClusterInfo(const blipobj::HitClust&);
+  void    PrintHitInfo(const blipobj::HitInfo&);
+  void    PrintBlipInfo(const blipobj::Blip&);
   float   Truncate(float, double = 0.1);
 
   // --- Data and calo objects ---
@@ -720,9 +748,25 @@ class BlipAna : public art::EDAnalyzer
   int   fNum3DBlipsPicky    = 0;
   int   fNum3DBlipsTrue     = 0;
 
+  // --- Neutrino selection tools
+  using ProxyPfpColl_t = selection::ProxyPfpColl_t;
+  using ProxyPfpElem_t = selection::ProxyPfpElem_t;
+  art::InputTag fPFPproducer;
+  art::InputTag fCLSproducer; // cluster associated to PFP
+  art::InputTag fSLCproducer; // slice associated to PFP
+  art::InputTag fHITproducer; // hit associated to cluster
+  art::InputTag fSHRproducer; // shower associated to PFP
+  art::InputTag fVTXproducer; // vertex associated to PFP
+  art::InputTag fPCAproducer; // PCAxis associated to PFP
+  art::InputTag fMCTproducer;
+  art::InputTag fTRKproducer;
+  
+  // selection tool
+  //std::unique_ptr<::selection::SelectionToolBase> _selectionTool;
+  //std::vector<std::unique_ptr<::analysis::AnalysisToolBase>> _analysisToolsVec;
+
   // --- Histograms ---
   TH1D*   h_part_process;
- 
   TH1D*   h_nhits[kNplanes];
   TH1D*   h_nclusts[kNplanes];
   TH1D*   h_nclusts_pm[kNplanes];
@@ -1029,6 +1073,23 @@ BlipAna::BlipAna(fhicl::ParameterSet const& pset) :
   fSavePlaneInfo  = pset.get<std::vector<bool>>     ("SavePlaneInfo",   {true,true,true});
   fDebugMode      = pset.get<bool>                  ("DebugMode",       false);
   fDoACPTrkCalib  = pset.get<bool>                  ("DoACPTrkCalib",   true);
+  
+  fPFPproducer = pset.get<art::InputTag>("PFPproducer","pandora");
+  fSHRproducer = pset.get<art::InputTag>("SHRproducer","shrreco3d");
+  fHITproducer = pset.get<art::InputTag>("HITproducer","pandora");
+  fVTXproducer = pset.get<art::InputTag>("VTXproducer","pandora");
+  fPCAproducer = pset.get<art::InputTag>("PCAproducer","pandora");
+  fCLSproducer = pset.get<art::InputTag>("CLSproducer","pandora");
+  fSLCproducer = pset.get<art::InputTag>("SLCproducer","pandora");
+  fMCTproducer = pset.get<art::InputTag>("MCTproducer","generator");
+  fTRKproducer = pset.get<art::InputTag>("TRKproducer","pandora");
+
+  // configure and construct Selection Tool
+  //const fhicl::ParameterSet &selection_pset = pset.get<fhicl::ParameterSet>("NuSelectionTool");
+  //_selectionTool = art::make_tool<::selection::SelectionToolBase>(selection_pset);
+
+  // pass the TTree to the selection tool so that any branch can be added to it
+  //_selectionTool->setBranches(_tree);
 
   // data tree object
   fData = new BlipAnaTreeDataStruct();
@@ -1112,6 +1173,8 @@ void BlipAna::analyze(const art::Event& evt)
   fData->subrun     = evt.id().subRun();
   fIsRealData       = evt.isRealData();
   fNumEvents++;
+  
+  //_selectionTool->SetData(fIsRealData);
 
   // Get timestamp
   unsigned long long int tsval = evt.time().value();
@@ -1127,12 +1190,70 @@ void BlipAna::analyze(const art::Event& evt)
   auto const* detProp   = lar::providerFrom<detinfo::DetectorPropertiesService>();
   auto const& SCE       = lar::providerFrom<spacecharge::SpaceChargeService>();
   auto const& tpcCalib  = art::ServiceHandle<lariov::TPCEnergyCalibService>()->GetProvider();
-
-  //============================================
-  // Run blip reconstruction: 
-  //============================================
   
-  fBlipAlg->RunBlipReco(evt);
+  // Tell us what's going on!
+  if( fNumEvents < 200 || (fNumEvents % 100) == 0 ) {
+  std::cout<<"\n"
+  <<"=========== BlipAna =========================\n"
+  <<"Event "<<evt.id().event()<<" / run "<<evt.id().run()<<"; total: "<<fNumEvents<<"\n";
+  }
+  
+
+
+  //===========================================
+  // Define vectors of reconstructed data 
+  // (hits, 2D hit clusters, 3D blips)
+  //===========================================
+  std::vector<blipobj::TrueBlip>  trueblips;
+  std::vector<blipobj::HitInfo>   hitinfo;
+  std::vector<blipobj::HitClust>  hitclust;
+  std::vector<blipobj::Blip>      blips;  
+  
+  //===========================================
+  // Check if blip objects were saved to the event;
+  // if not, then run the reconstruction
+  //===========================================
+  /*
+  art::Handle< std::vector<blipobj::Blip> > blipHandle;
+  std::vector<art::Ptr<blipobj::Blip> > bliplist;
+  if (evt.getByLabel("blipreco",blipHandle))
+    art::fill_ptr_vector(bliplist, blipHandle);
+  if( bliplist.size() && fData->loadBlipsFromFile ) {
+    //for(size_t i=0; i<blips.size(); i++){
+    for(size_t i=0; i< blips.size(); i++) {
+      auto& b = blips[i];
+      //------------------------------------------------
+      // clear the edep associations since we don't have
+      // the correlated truth information for these blips
+      //------------------------------------------------
+      b.truth.ID = -9;
+      b.clusters[0].EdepID = -9;
+      b.clusters[1].EdepID = -9;
+      b.clusters[2].EdepID = -9;
+      blips.push_back(b);  
+    }
+    std::cout<<"Retrieved "<<blips.size()<<" blips from the artROOT event.\n";
+  } else {
+  */
+    fBlipAlg->RunBlipTruth(evt);
+    fBlipAlg->RunBlipReco(evt);
+    trueblips = fBlipAlg->trueblips;
+    hitinfo   = fBlipAlg->hitinfo;
+    hitclust  = fBlipAlg->hitclust;
+    blips     = fBlipAlg->blips;
+  //}
+ 
+  /*
+
+  } else {
+    fBlipAlg->RunBlipTruth(evt);
+    fBlipAlg->RunBlipReco(evt);
+    trueblips = fBlipAlg->trueblips;
+    hitinfo   = fBlipAlg->hitinfo;
+    hitclust  = fBlipAlg->hitclust;
+    blips     = fBlipAlg->blips;
+  }
+  */
   
   //  
   //  In the above step, we pass the entire art::Event to the algorithm, 
@@ -1142,7 +1263,7 @@ void BlipAna::analyze(const art::Event& evt)
   //  We can then retrieve these blips and incorporate them into
   //  our analysis however we like:
   //
-  //    std::vector<blip::Blip> blipVec = fBlipAlg->blips;
+  //    std::vector<blipobj::Blip> blipVec = fBlipAlg->blips;
   //
   //  The alg also creates collections of 'HitInfo' and 'HitClust'
   //  structs used in the blip reconstruction process, which can be
@@ -1157,13 +1278,6 @@ void BlipAna::analyze(const art::Event& evt)
   //
 
 
-  // Tell us what's going on!
-  if( fNumEvents < 200 || (fNumEvents % 100) == 0 ) {
-  std::cout<<"\n"
-  <<"=========== BlipAna =========================\n"
-  <<"Event "<<evt.id().event()<<" / run "<<evt.id().run()<<"; total: "<<fNumEvents<<"\n";
-  }
-  //std::cout<<"Lifetime is "<<electronLifetime<<" microseconds\n";
   
   //=======================================
   // Get data products for this event
@@ -1179,6 +1293,12 @@ void BlipAna::analyze(const art::Event& evt)
   std::cout<<plistTest.size()<<"\n";
   */
   
+  // -- MCTruth 
+  art::Handle< std::vector<simb::MCTruth> > truthHandle;
+  std::vector<art::Ptr<simb::MCTruth> > truthlist;
+  if (evt.getByLabel("generator",truthHandle))
+    art::fill_ptr_vector(truthlist, truthHandle);
+
   // -- G4 particles
   art::Handle< std::vector<simb::MCParticle> > pHandle;
   std::vector<art::Ptr<simb::MCParticle> > plist;
@@ -1209,7 +1329,73 @@ void BlipAna::analyze(const art::Event& evt)
   
   //std::cout<<"Retrieved "<<hitlist.size()<<" hits from "<<fHitProducer<<"\n";
   //std::cout<<"Retrieved "<<tracklist.size()<<" tracks from "<<fTrkProducer<<"\n";
+  
+  //=======================================================
+  // Check if the event contains neutrino information
+  // (much of this copied from ubana/searchingfornues)
+  //=======================================================
 
+  // -- PFPs
+  art::Handle< std::vector<recob::PFParticle> > pfpHandle;
+  std::vector<art::Ptr<recob::PFParticle> > pfplist;
+  if (evt.getByLabel(fPFPproducer,pfpHandle))
+    art::fill_ptr_vector(pfplist, pfpHandle);
+ 
+  // -- associated tracks/vertex
+  art::FindManyP<recob::Track> fmtrk_from_pfp(pfpHandle,evt,fTrkProducer);
+
+  std::cout<<"Found "<<pfplist.size()<<" PFPs\n";
+
+  if( pfplist.size() ) {
+    
+    // grab PFParticles in event
+    ProxyPfpColl_t const &pfp_proxy = proxy::getCollection<std::vector<recob::PFParticle>>(evt, fPFPproducer,
+												    proxy::withAssociated<larpandoraobj::PFParticleMetadata>(fPFPproducer),
+												    proxy::withAssociated<recob::Cluster>(fCLSproducer),
+												    proxy::withAssociated<recob::Slice>(fSLCproducer),
+												    proxy::withAssociated<recob::Track>(fTRKproducer),
+												    proxy::withAssociated<recob::Vertex>(fVTXproducer),
+												    proxy::withAssociated<recob::PCAxis>(fPCAproducer),
+												    proxy::withAssociated<recob::Shower>(fSHRproducer),
+												    proxy::withAssociated<recob::SpacePoint>(fPFPproducer));
+    
+    // loop through PFParticles
+    for (const ProxyPfpElem_t &pfp_pxy : pfp_proxy)
+    {
+      // get metadata for this PFP
+      const auto &pfParticleMetadataList = pfp_pxy.get<larpandoraobj::PFParticleMetadata>();
+
+      // find the neutrino
+      if (pfp_pxy->IsPrimary() == false) continue;
+      auto PDG = fabs(pfp_pxy->PdgCode());
+      if ( (PDG == 12) || (PDG == 14) ) 
+      {
+        std::cout<<"Found a neutrino PFP\n";
+
+        if (pfParticleMetadataList.size() != 0)
+        {
+          for (unsigned int j = 0; j < pfParticleMetadataList.size(); ++j)
+          {
+            const art::Ptr<larpandoraobj::PFParticleMetadata> &pfParticleMetadata(pfParticleMetadataList.at(j));
+            auto pfParticlePropertiesMap = pfParticleMetadata->GetPropertiesMap();
+            if (!pfParticlePropertiesMap.empty())
+            {
+              std::cout << " Found PFParticle " << pfp_pxy->Self() << " with: " << std::endl;
+              for (std::map<std::string, float>::const_iterator it = pfParticlePropertiesMap.begin(); it != pfParticlePropertiesMap.end(); ++it)
+              {
+                std::cout << "  - " << it->first << " = " << it->second << std::endl;
+              }
+            }
+          }
+        } // if PFP metadata exists!
+    
+
+      }//if PDG of neutrino
+    }//end loop over PFPs
+  }
+  
+  
+  
 
   //====================================
   // Keep tabs on total energy, charge,
@@ -1218,6 +1404,26 @@ void BlipAna::analyze(const art::Event& evt)
   float total_depEnergy         = 0;
   float total_depElectrons      = 0;
   float total_numElectrons      = 0;
+  
+  //===================================
+  // Check neutrinos in MCTruth
+  // (NuanceOffset found through simb::kNuanceOffset)
+  //===================================
+  if( truthlist.size() > 0 ) {
+    auto& nu    = truthlist[0]->GetNeutrino();
+    auto& part  = truthlist[0]->GetParticle(0);
+    auto PDG    = fabs(part.PdgCode());
+    if ( (PDG == 12) || (PDG == 14) ) {
+      fData->mctruth_nu_pdg   = part.PdgCode();
+      fData->mctruth_nu_ccnc  = nu.CCNC();
+      fData->mctruth_nu_mode  = nu.Mode();
+      fData->mctruth_nu_vtx_x = part.EndPosition()[0];
+      fData->mctruth_nu_vtx_y = part.EndPosition()[1];
+      fData->mctruth_nu_vtx_z = part.EndPosition()[2];
+      fData->mctruth_nu_KE    =  /*GeV->MeV*/1e3 * (part.E()-part.Mass());
+    }
+  }
+
 
   //====================================
   // Save MCParticle information
@@ -1225,7 +1431,7 @@ void BlipAna::analyze(const art::Event& evt)
   std::map<int,int> map_g4trkid_index;
   if( plist.size() ) {
     
-    std::vector<blip::ParticleInfo>& pinfo = fBlipAlg->pinfo;
+    std::vector<blipobj::ParticleInfo>& pinfo = fBlipAlg->pinfo;
     
     // Loop through the MCParticles
     //if( fDebugMode ) std::cout<<"\nLooping over G4 MCParticles: \n";
@@ -1250,11 +1456,6 @@ void BlipAna::analyze(const art::Event& evt)
           fData->primary_y0[i]      = pPart->Vy();
           fData->primary_z0[i]      = pPart->Vz();
           fData->primary_T0[i]      = pinfo[i].time;
-          if( pinfo[i].pathLength ) {
-            fData->primary_xAV[i]     = pinfo[i].startPoint.X();
-            fData->primary_yAV[i]     = pinfo[i].startPoint.Y();
-            fData->primary_zAV[i]     = pinfo[i].startPoint.Z();
-          }
         }
 
         fData->part_trackID[i]         = pPart->TrackId();
@@ -1301,7 +1502,7 @@ void BlipAna::analyze(const art::Event& evt)
   //====================================
   // Save TrueBlip information
   //====================================
-  std::vector<blip::TrueBlip>& trueblips = fBlipAlg->trueblips;
+  //std::vector<blipobj::TrueBlip>& trueblips = fBlipAlg->trueblips;
   fData->nedeps = (int)trueblips.size();
   if( trueblips.size() ) {
     //if( fDebugMode ) std::cout<<"\nLooping over true blips:\n";
@@ -1393,6 +1594,7 @@ void BlipAna::analyze(const art::Event& evt)
     const auto& endPt   = trk->End();
     bool isMC = fBlipAlg->map_trkid_isMC[trk->ID()];
     fData->trk_isMC[i]  = isMC;
+    fData->trk_g4id[i]  = fBlipAlg->map_trkid_g4id[trk->ID()];
     fData->trk_id[i]    = trk->ID();
     fData->trk_npts[i]  = trk->NumberTrajectoryPoints();
     fData->trk_length[i]= trk->Length();
@@ -1616,7 +1818,6 @@ void BlipAna::analyze(const art::Event& evt)
   
   for(size_t i=0; i<hitlist.size(); i++){
     
-    auto const& hinfo = fBlipAlg->hitinfo[i];
     int     plane   = hitlist[i]->WireID().Plane;
     int     ndf     = hitlist[i]->DegreesOfFreedom();
     double  gof     = (ndf>0) ? hitlist[i]->GoodnessOfFit()/ndf : -9;
@@ -1629,6 +1830,8 @@ void BlipAna::analyze(const art::Event& evt)
     float sumADC = hitlist[i]->SummedADC();
     float integral = hitlist[i]->Integral();
     
+    //auto const& hinfo = fBlipAlg->hitinfo[i];
+    auto const& hinfo = hitinfo[i];
     bool    isMC    = (hinfo.g4trkid >= 0 );
     bool    isTrked = (hinfo.trkid >= 0 && map_trkid_length[hinfo.trkid] > 5 ); 
     bool    isMIP     = map_trkid_isMIP[hinfo.trkid];
@@ -1883,8 +2086,8 @@ void BlipAna::analyze(const art::Event& evt)
     // if this clust has an associated "trueblip" ID, find it
     // and figure out the true G4 charge, energy, etc
     int tbi = clust.EdepID;
-    if( tbi >= 0 && tbi < (int)fBlipAlg->trueblips.size() ) {
-      auto const& trueBlip = fBlipAlg->trueblips[tbi];
+    if( tbi >= 0 && tbi < (int)trueblips.size() ) {
+      auto const& trueBlip = trueblips[tbi];
       int g4index = trueBlip.LeadG4Index;
       if( clust.Plane==2 ){
         fData->part_madeClustCol[g4index]  = true;
@@ -1928,14 +2131,15 @@ void BlipAna::analyze(const art::Event& evt)
   //====================================
   // Save blip info to tree
   //===================================
-  fData->nblips             = fBlipAlg->blips.size();
+  fData->nblips             = blips.size();
   int nblips_matched        = 0;
   int nblips_total          = 0;
   int nblips_picky          = 0;
   float true_blip_charge    = 0;
-  for(size_t i=0; i<fBlipAlg->blips.size(); i++){
+  for(size_t i=0; i<blips.size(); i++){
     if( i > kMaxBlips ) break;
-    auto& blp = fBlipAlg->blips[i];
+    //auto& blp = fBlipAlg->blips[i];
+    auto& blp = blips[i];
   
     nblips_total++;
     fNum3DBlips++;
@@ -2012,7 +2216,7 @@ void BlipAna::analyze(const art::Event& evt)
   }
   
   if( fDebugMode ) {
-    for(auto const& b : fBlipAlg->blips ) PrintBlipInfo(b);
+    for(auto const& b : blips ) PrintBlipInfo(b);
   }
  
   
@@ -2154,7 +2358,7 @@ void BlipAna::PrintParticleInfo(size_t i){
   ); 
 }
 
-void BlipAna::PrintTrueBlipInfo(const blip::TrueBlip& tb){
+void BlipAna::PrintTrueBlipInfo(const blipobj::TrueBlip& tb){
   printf("  edepID: %5i  G4ID: %-6i PDG: %-10i XYZ: %7.2f, %7.2f, %7.2f, %8.3f MeV, %8i e- deposited, %8i e- @anode,  %12s\n",
    tb.ID,
    tb.LeadG4ID,
@@ -2169,7 +2373,7 @@ void BlipAna::PrintTrueBlipInfo(const blip::TrueBlip& tb){
   ); 
 }
 
-void BlipAna::PrintHitInfo(const blip::HitInfo& hi){
+void BlipAna::PrintHitInfo(const blipobj::HitInfo& hi){
   printf("  hitID: %4i, TPC: %i, plane: %i, driftTicks: %7.2f, leadWire: %3i, G4ID: %4i, recoTrack: %4i\n",
     hi.hitid,
     hi.tpc,
@@ -2181,7 +2385,7 @@ void BlipAna::PrintHitInfo(const blip::HitInfo& hi){
   );
 }
 
-void BlipAna::PrintClusterInfo(const blip::HitClust& hc){
+void BlipAna::PrintClusterInfo(const blipobj::HitClust& hc){
   printf("  clustID: %4i, TPC: %i, plane: %i, time range: %7.2f - %7.2f, timespan: %6.2f, leadWire: %3i, nwires: %3i, nhits: %3i, edepid: %i, isMatched: %i, blipID: %i\n",
     hc.ID,
     hc.TPC,
@@ -2198,7 +2402,7 @@ void BlipAna::PrintClusterInfo(const blip::HitClust& hc){
   );
 }
 
-void BlipAna::PrintBlipInfo(const blip::Blip& bl){
+void BlipAna::PrintBlipInfo(const blipobj::Blip& bl){
   printf("  blipID: %4i, TPC: %i, charge: %8.0i,  recoEnergy: %8.3f MeV, XYZ: %6.1f, %6.1f, %6.1f,   EdepID: %i\n",
   bl.ID,
   bl.TPC,

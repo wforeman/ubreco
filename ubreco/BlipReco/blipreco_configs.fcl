@@ -48,7 +48,6 @@ microboone_blipalg:
   ClustMatchSigmaFact:  0.8             #// max extent for matching charge-weighted time [xRMS]
   ClustMatchMaxQRatio:  4.0             #// max allowed charge ratio of two clusters to be matched
   ClustMatchQDiffLimit: 10e3            #// if charge-diff >, clusters are subject to QRatio cut above [e-]
-  #ClustMatchMinScore:   0.5             #// required match score
   MinMatchedPlanes:     2               #// minimum number of planes matched for 3D blip
   PickyBlips:           false           #// require 3 planes that all intersect at ~same point
   ApplyTrkCylinderCut:  false           #// reject blips in track cone-cylinder regions
@@ -65,10 +64,8 @@ microboone_blipalg:
   BadChanProducer:      "nfspl1:badchannels" #// label for vector of bad channel IDs from signal processing
   #BadChanFile:          "blipreco_badchannels.txt"
   MinDeadWireGap:       0               #// min wire gap size separating cluster from a dead region
-
-  #KeepAllClustersCol:   true
-  #KeepAllClustersInd:   true #false
 }
+
 
 # ===============================================
 # Main BlipAna settings (TTree + diagnostic hists)
@@ -83,6 +80,30 @@ microboone_blipana:
   SaveHitInfo:        false
   SaveClustInfo:      true
   #DebugMode:          true #// enables many more debug statements
+  
+  NuSelectionTool: { 
+    tool_type: "DefaultAnalysis"
+    CRTVetoproducer: ""
+    CLSproducer: "pandora"
+    MCTproducer: "generator"
+    MCFluxproducer: "generator"
+    Hproducer: "gaushit"
+    BacktrackTag: "gaushitTruthMatch"
+    MCRproducer: "mcreco"
+    SLCproducer: "pandora"
+    MCPproducer: "largeant"
+    ProtonThreshold: 0.04 # GeV
+    fidvolXstart: 10
+    fidvolXend:   10
+    fidvolYstart: 15
+    fidvolYend:   15
+    fidvolZstart: 50
+    fidvolZend:   50
+    makeNuMINtuple: false
+    NuMIOpFiltProcName:    "DataStage1Optical"
+    NuMISWTriggerProcName: "DataOverlayOpticalNuMI"
+  }
+
 }
 
 microboone_blipana_data:                    @local::microboone_blipana
@@ -95,6 +116,7 @@ microboone_blipana_fullmc.VetoBadChannels:          false
 #microboone_blipana_fullmc.BlipAlg.SimGainFactor:    1.0
 #microboone_blipana_fullmc.SaveHitInfo:      true
 
+
 # ===============================================
 # TrackMasker settings
 microboone_trackmasker:
@@ -105,6 +127,14 @@ microboone_trackmasker:
   MinTrkLength:       5   # cm
   MinTrkLengthVeto:   15  # cm
   VetoRadius:         15  # cm
+}
+
+# ===============================================
+# Producer settings
+microboone_blipreco:
+{
+  module_type: "BlipRecoProducer"
+  BlipAlg:     @local::microboone_blipalg
 }
 
 END_PROLOG

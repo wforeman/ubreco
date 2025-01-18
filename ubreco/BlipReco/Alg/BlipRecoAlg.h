@@ -76,14 +76,19 @@ namespace blip {
   
     void    reconfigure(fhicl::ParameterSet const& pset );
     void    RunBlipReco(const art::Event& evt);
+    void    RunBlipTruth(const art::Event& evt);
+    void    ProcessHits(const art::Event& evt);
     void    PrintConfig();
-    
+   
+    bool    ranHitProcess = false;
+    bool    ranBlipTruth = false;
+
     // TO-DO: make these private and create getters instead
-    std::vector<blip::HitInfo>      hitinfo;
-    std::vector<blip::HitClust>     hitclust;
-    std::vector<blip::Blip>         blips;  
-    std::vector<blip::TrueBlip>     trueblips;
-    std::vector<blip::ParticleInfo> pinfo;
+    std::vector<blipobj::HitInfo>      hitinfo;
+    std::vector<blipobj::HitClust>     hitclust;
+    std::vector<blipobj::Blip>         blips;  
+    std::vector<blipobj::TrueBlip>     trueblips;
+    std::vector<blipobj::ParticleInfo> pinfo;
     
     calo::CalorimetryAlg*   fCaloAlg;
     float   ModBoxRecomb(float,float);
@@ -97,12 +102,18 @@ namespace blip {
     int                 EvtBadChanCount;
     std::map<size_t,size_t> map_trkid_index;
     std::map<size_t,size_t> map_trkid_isMC;
+    std::map<size_t,size_t> map_trkid_g4id;
     
     TH1D*   h_recoWireEff_denom;
     TH1D*   h_recoWireEff_num;
     
     TH1D*   h_recoWireEffQ_denom;
     TH1D*   h_recoWireEffQ_num;
+    
+    std::map<int,int>                     map_g4trkid_pdg;
+    std::map<int, std::set<int>>          map_g4trkid_chan;
+    std::map<int, std::map<int,double> >  map_g4trkid_chan_energy;
+    std::map<int, std::map<int,double> >  map_g4trkid_chan_charge;
 
 
    private:
@@ -167,6 +178,7 @@ namespace blip {
     bool                fYZUniformityCorr;
     float               fModBoxA;
     float               fModBoxB;
+    
  
 
     // --- Histograms ---

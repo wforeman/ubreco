@@ -42,22 +42,22 @@ namespace BlipUtils {
   // Functions related to blip reconstruction
   //###################################################
   //void      InitializeDetProps();
-  void      FillParticleInfo(simb::MCParticle const&, blip::ParticleInfo&, SEDVec_t&, int plane=2);
-  //void      CalcPartDrift(blip::ParticleInfo&, int);
+  void      FillParticleInfo(simb::MCParticle const&, blipobj::ParticleInfo&, SEDVec_t&, int plane=2);
+  //void      CalcPartDrift(blipobj::ParticleInfo&, int);
   //void      CalcTotalDep(float&,int&,float&, SEDVec_t&);
-  void      MakeTrueBlips(std::vector<blip::ParticleInfo>&, std::vector<blip::TrueBlip>&);
-  void      GrowTrueBlip(blip::ParticleInfo&, blip::TrueBlip&);
-  void      MergeTrueBlips(std::vector<blip::TrueBlip>&, float);
-  void      GrowHitClust(blip::HitInfo const&, blip::HitClust&);
+  void      MakeTrueBlips(std::vector<blipobj::ParticleInfo>&, std::vector<blipobj::TrueBlip>&);
+  void      GrowTrueBlip(blipobj::ParticleInfo&, blipobj::TrueBlip&);
+  void      MergeTrueBlips(std::vector<blipobj::TrueBlip>&, float);
+  void      GrowHitClust(blipobj::HitInfo const&, blipobj::HitClust&);
   bool      DoHitsOverlap(art::Ptr<recob::Hit> const&, art::Ptr<recob::Hit> const&);
-  bool      DoHitClustsOverlap(blip::HitClust const&, blip::HitClust const&);
-  bool      DoHitClustsOverlap(blip::HitClust const&,float,float);
-  float     CalcHitClustsOverlap(blip::HitClust const&, blip::HitClust const&);
+  bool      DoHitClustsOverlap(blipobj::HitClust const&, blipobj::HitClust const&);
+  bool      DoHitClustsOverlap(blipobj::HitClust const&,float,float);
+  float     CalcHitClustsOverlap(blipobj::HitClust const&, blipobj::HitClust const&);
   float     CalcOverlap(float const&, float const&, float const&, float const&);
   bool      DoChannelsIntersect(int,int);
-  bool      DoHitClustsMatch(blip::HitClust const&, blip::HitClust const&,float);
-  blip::HitClust  MakeHitClust(std::vector<blip::HitInfo> const&);
-  blip::Blip      MakeBlip(std::vector<blip::HitClust> const&);
+  bool      DoHitClustsMatch(blipobj::HitClust const&, blipobj::HitClust const&,float);
+  blipobj::HitClust  MakeHitClust(std::vector<blipobj::HitInfo> const&);
+  blipobj::Blip      MakeBlip(std::vector<blipobj::HitClust> const&);
   
 
   //###################################################

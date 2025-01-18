@@ -6,16 +6,16 @@ art_make(
 			${MF_MESSAGELOGGER}
 			cetlib cetlib_except
       ${Boost_SYSTEM_LIBRARY}
-			${ROOT_BASIC_LIB_LIST}
       MODULE_LIBRARIES 
 			larcorealg_Geometry
 			larcore_Geometry_Geometry_service
 			lardataobj_RecoBase
+      lardataobj_MCBase
 			lardataobj_AnalysisBase	
 			lardata_RecoObjects larreco_Deprecated  
+			lardata_Utilities
 			larreco_RecoAlg
       larreco_Calorimetry
-			lardata_Utilities
 			larevt_Filters
 			nusimdata_SimulationBase
 			${LARRECO_LIB}

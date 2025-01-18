@@ -58,7 +58,7 @@ physics:
     trackmasker:   @local::microboone_trackmasker
     
     blipreco3D: {
-      module_type: "BlipReco3D"
+      module_type: "BlipRecoProducer"
       BlipAlg:     @local::microboone_blipalg
     }
   

@@ -1,0 +1,4 @@
+#include "reco_uboone_data_mcc9_8_driver_stage1_reduced.fcl"
+
+outputs.out1.fileName: "%ifb_%tc_%#_reco1_standardThresh.root"
+outputs.out1.fileProperties.maxInputFiles: 1

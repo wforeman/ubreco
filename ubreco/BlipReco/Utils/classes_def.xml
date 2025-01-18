@@ -1,5 +1,11 @@
 <lcgdict>
-<class name="art::Wrapper<std::vector<blip::Blip> >"/>
-<class name="blip::Blip"/>
-<class name="std::vector<blip::Blip>"/>
+<class name="blipobj::Blip"/>
+<class name="art::Wrapper<std::vector<blipobj::Blip> >"/>
+<class name="std::vector<blipobj::Blip>"/>
+
+<class name="art::Wrapper<art::Assns<blipobj::Blip,recob::Hit> >"/>
+<class name="art::Assns<blipobj::Blip,recob::Hit>"/>
+
+<class name="art::Wrapper<art::Assns<recob::Hit,blipobj::Blip> >"/>
+<class name="art::Assns<recob::Hit,blipobj::Blip>"/>
 </lcgdict>

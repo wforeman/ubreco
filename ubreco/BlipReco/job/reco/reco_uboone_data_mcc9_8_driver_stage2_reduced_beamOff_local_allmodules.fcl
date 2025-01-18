@@ -1,0 +1,8 @@
+#include "reco_uboone_data_mcc9_8_driver_stage2_reduced_beamOff.fcl"
+
+# Don't write huge metadata files
+microboone_tfile_metadata.GenerateTFileMetadata: [ true, false ]
+source.maxEvents: -1
+
+outputs.out1.fileName: "%ifb_%#_reco2.root"
+outputs.out1.fileProperties.maxInputFiles: 1
