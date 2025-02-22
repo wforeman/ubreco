@@ -41,8 +41,8 @@ microboone_blipalg:
   DoHitFiltering:       true            #// filter hits based on amp, width, RMS
   MinHitGOF:            [0, 0, 0]       #// -- exclude pulse-train hits
   MinHitRMS:            [0, 0, 0]       #// -- exclude narrow noise-like hits on collection plane
-  MaxWiresInCluster:    10              #// max allowable wires in a cluster
-  MaxClusterSpan:       50              #// max allowable time-ticks of a cluster
+  MaxWiresInCluster:    15              #// max allowable wires in a cluster
+  MaxClusterSpan:       75              #// max allowable time-ticks of a cluster
   ClustMatchMinOverlap: 0.5             #// minimum fractional overlap to be eligible for matching
   ClustMatchMaxTicks:   2.0             #// max extent for matching start/end time of clusters [ticks]
   ClustMatchSigmaFact:  0.8             #// max extent for matching charge-weighted time [xRMS]
@@ -66,55 +66,6 @@ microboone_blipalg:
   MinDeadWireGap:       0               #// min wire gap size separating cluster from a dead region
 }
 
-
-# ===============================================
-# Main BlipAna settings (TTree + diagnostic hists)
-microboone_blipana:
-{
-  module_type:        "BlipAna"
-  BlipAlg:            @local::microboone_blipalg
-  SaveTruthInfo:      true
-  SaveTrueParticles:  true
-  SavePrimaries:      false
-  SaveTrkInfo:        true
-  SaveHitInfo:        false
-  SaveClustInfo:      true
-  #DebugMode:          true #// enables many more debug statements
-  
-  NuSelectionTool: { 
-    tool_type: "DefaultAnalysis"
-    CRTVetoproducer: ""
-    CLSproducer: "pandora"
-    MCTproducer: "generator"
-    MCFluxproducer: "generator"
-    Hproducer: "gaushit"
-    BacktrackTag: "gaushitTruthMatch"
-    MCRproducer: "mcreco"
-    SLCproducer: "pandora"
-    MCPproducer: "largeant"
-    ProtonThreshold: 0.04 # GeV
-    fidvolXstart: 10
-    fidvolXend:   10
-    fidvolYstart: 15
-    fidvolYend:   15
-    fidvolZstart: 50
-    fidvolZend:   50
-    makeNuMINtuple: false
-    NuMIOpFiltProcName:    "DataStage1Optical"
-    NuMISWTriggerProcName: "DataOverlayOpticalNuMI"
-  }
-
-}
-
-microboone_blipana_data:                    @local::microboone_blipana
-microboone_blipana_data.BlipAlg.CaloAlg:    @local::microboone_calo_mcc9_data
-microboone_blipana_data.SaveTruthInfo:      false
-
-microboone_blipana_fullmc:                          @local::microboone_blipana
-microboone_blipana_fullmc.BlipAlg.CaloAlg:          @local::microboone_calo_mcc9_mc
-microboone_blipana_fullmc.VetoBadChannels:          false
-#microboone_blipana_fullmc.BlipAlg.SimGainFactor:    1.0
-#microboone_blipana_fullmc.SaveHitInfo:      true
 
 
 # ===============================================

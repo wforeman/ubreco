@@ -39,6 +39,8 @@
 #include "ubreco/BlipReco/Alg/BlipRecoAlg.h"
 #include "ubana/ubana/searchingfornues/Selection/SelectionTools/SelectionToolBase.h"
 #include "ubana/ubana/searchingfornues/Selection/AnalysisTools/AnalysisToolBase.h"
+#include "ubana/ubana/searchingfornues/Selection/CommonDefs/TrackShowerScoreFuncs.h"
+#include "ubana/ubana/searchingfornues/Selection/CommonDefs/SCECorrections.h"
 
 // C++ includes
 #include "cetlib/search_path.h"
@@ -93,6 +95,7 @@ class BlipAnaTreeDataStruct
 
   // --- TTrees
   TTree* evtTree;
+  TTree* selTree;
 
   // --- Configurations and switches ---
   std::string treeName      = "anatree";
@@ -100,10 +103,17 @@ class BlipAnaTreeDataStruct
   bool  saveTruthInfo       = true;
   bool  saveTrueEDeps       = true;
   bool  savePrimaries       = false;
-  bool  saveTrueParticles   = false;
+  bool  saveTrueParticles   = true;
   bool  saveTrkInfo         = true;
   bool  saveHitInfo         = true;
+  bool  saveHitInfo_Blips   = false;
+  bool  saveHitInfo_Truth   = false;
   bool  saveClustInfo       = true;
+  bool  saveClustInfo_Blips = false;
+  bool  saveClustInfo_Truth = false;
+  bool  saveBlipInfo_Truth  = false;
+  bool  saveNuInfo          = false;
+  bool  saveNuSelTree       = false;
 
   // --- Event information ---   
   int           event;          // event number
@@ -127,7 +137,7 @@ class BlipAnaTreeDataStruct
   // these are grabbed from the G4 MCParticles
   // list with more details saved (XYZ, P, etc)
   int   nprimaries;             // number of generated primary particles      
-  int   primary_trackID[kMaxG4];// geant4 track ID
+  int   primary_g4id[kMaxG4];   // geant4 track ID
   int   primary_pdg[kMaxG4];    // PDG code
   float primary_x0[kMaxG4];     // starting X [cm]
   float primary_y0[kMaxG4];     // starting y [cm]
@@ -135,12 +145,15 @@ class BlipAnaTreeDataStruct
   float primary_Px[kMaxG4];     // momentum in X [MeV/c]
   float primary_Py[kMaxG4];     // momentum in Y [MeV/c]
   float primary_Pz[kMaxG4];     // momentum in z [MeV/c]
+  float primary_KE[kMaxG4];     // kinetic energy [MeV]
   float primary_T0[kMaxG4];     // time of generation
 
+
   // --- G4 information ---
-  int   nparticles;               // number of G4 particles
+  int   nparts;               // number of G4 particles
   bool  part_isPrimary[kMaxG4];   // is primary particle
-  int   part_trackID[kMaxG4];     // G4 track ID
+  bool  part_isContained[kMaxG4]; // particle is contained in active volume
+  int   part_g4id[kMaxG4];        // G4 track ID
   int   part_pdg[kMaxG4];         // PDG
   int   part_nDaughters[kMaxG4];  // number of daughters
   int   part_mother[kMaxG4];      // mother particle
@@ -166,12 +179,31 @@ class BlipAnaTreeDataStruct
   float part_depEnergy[kMaxG4];   // energy deposited in AV (MeV)
   int   part_depElectrons[kMaxG4];// electrons deposited
   std::vector<std::string> part_process;// process name
+  
+  // --- Selected particles of interest (POI) ---
+  // save more detailed particle info for select particles
+  // (ie., primaries, muons, pions, protons, neutrons)
+  /*
+  int   nparts_sel;                 // number of selected G4 particles
+  int   part_sel_g4id[kMaxG4];      // G4 track ID
+  int   part_sel_index[kMaxG4];     // G4 particle index ("part_var[index]")
+  float part_sel_Px[kMaxG4];        // momentum x (MeV)
+  float part_sel_Py[kMaxG4];        // momentum y (MeV)
+  float part_sel_Pz[kMaxG4];        // momentum z (MeV)
+  float part_sel_startPointx[kMaxG4];// starting x (cm)
+  float part_sel_startPointy[kMaxG4];// starting y (cm)
+  float part_sel_startPointz[kMaxG4];// starting y (cm)
+  float part_sel_endPointx[kMaxG4]; // ending x (cm)
+  float part_sel_endPointy[kMaxG4]; // ending y (cm)
+  float part_sel_endPointz[kMaxG4]; // ending y (cm)
+  float part_sel_startT[kMaxG4];    // starting time (us)
+  */
+
 
   // --- True energy deposit info (derived from SimChannels and SimEnergyDeposits) ---
   int   nedeps;                   // number of true localized energy depositions
   int   edep_tpc[kMaxEDeps];      // TPC
-  int   edep_g4id[kMaxEDeps];     // leading G4 index ("part_variable[g4id]")
-  int   edep_g4trkid[kMaxEDeps];  // leading G4 track ID ("part_trackID")
+  int   edep_g4id[kMaxEDeps];     // leading G4 track ID ("part_g4id")
   bool  edep_allchansgood[kMaxEDeps]; // charge hits all good channels
   float edep_g4qfrac[kMaxEDeps];  // fraction of total charge from lead particle
   bool  edep_isPrimary[kMaxEDeps];// matched to a primary generated particle?
@@ -200,12 +232,13 @@ class BlipAnaTreeDataStruct
 
   // --- Hit information ---
   int	  nhits;                    // number of hits
+  int   hit_id[kMaxHits];         // Hit ID
   int	  hit_tpc[kMaxHits];        // tpc number
   int	  hit_plane[kMaxHits];      // plane number
   int	  hit_wire[kMaxHits];       // wire number
   int	  hit_channel[kMaxHits];    // channel ID
   float	hit_peakT[kMaxHits];      // raw peak time (tick)
-  float	hit_time[kMaxHits];       // corrected peak time (tick)
+  float	hit_driftT[kMaxHits];     // corrected peak time (tick)
   float hit_rms[kMaxHits];        // shape RMS
   float	hit_amp[kMaxHits];        // amplitude
   float	hit_area[kMaxHits];       // charge (area) in ADC units
@@ -214,11 +247,12 @@ class BlipAnaTreeDataStruct
   int   hit_mult[kMaxHits];       // multiplicity
   int	  hit_trkid[kMaxHits];      // is this hit associated with a reco track?
   int   hit_ismatch[kMaxHits];    // does hit have time match on another plane?
-  int	  hit_g4trkid[kMaxHits];    // G4 TrackID of leading particle
+  int	  hit_g4id[kMaxHits];       // G4 TrackID of leading particle
   float hit_g4frac[kMaxHits];     // fraction of hit charge from leading MCParticle
   float hit_g4energy[kMaxHits];   // true energy
   float hit_g4charge[kMaxHits];   // true number of electrons at wire
-  int   hit_clustid[kMaxHits];    // key of HitClust in which hit was included
+  int   hit_clustid[kMaxHits];    // ID of HitClust in which hit was included
+  int   hit_clustindex[kMaxHits]; // index of hitclust in which hit was included
   int   hit_blipid[kMaxHits];     // key of Blip in which hit was included
   float hit_gof[kMaxHits];        // goodness of fit (default -1)
 
@@ -247,7 +281,6 @@ class BlipAnaTreeDataStruct
   int   clust_startwire[kMaxClusts];    // starting wire
   int   clust_endwire[kMaxClusts];      // ending wire
   int   clust_nwires[kMaxClusts];       // number of wires in this cluster
-  int   clust_nwiresNoisy[kMaxClusts];
   int   clust_nwiresBad[kMaxClusts];
   //int   clust_deadwiresep[kMaxClusts];  // separation from nearest dead region (0=adjacent)
   bool  clust_bydeadwire[kMaxClusts];     // is cluster adjacent to a dead wire
@@ -261,6 +294,8 @@ class BlipAnaTreeDataStruct
   //float clust_rms[kMaxClusts];          // charge-weighted RMS
   float clust_starttime[kMaxClusts];    // cluster start tick
   float clust_endtime[kMaxClusts];      // cluster end tick
+  int   clust_starttick[kMaxClusts];    // cluster start tick
+  int   clust_endtick[kMaxClusts];      // cluster end tick
   //int   clust_nnfhits[kMaxClusts];      // number of non-fitted hits (ie, pulse trains)
   bool  clust_pulsetrain[kMaxClusts];   // does this cluster include pulse-trains?
   //float clust_gof[kMaxClusts];          // mean goodness of fit for hits
@@ -287,16 +322,25 @@ class BlipAnaTreeDataStruct
   float blip_energyTrue[kMaxBlips];   // blip truth energy [MeV]
   float blip_yzcorr[kMaxBlips];       // YZ uniformity correction factor (already applied)
   int   blip_edepid[kMaxBlips];       // true energy dep ID ("edep_variable[id]")
+  int   blip_g4id[kMaxBlips];         // true MC Particle G4ID
   float blip_proxtrkdist[kMaxBlips];  // distance to nearest track
   int   blip_proxtrkid[kMaxBlips];    // index of nearest trk
   bool  blip_touchtrk[kMaxBlips];     // is blip touching track?
   int   blip_touchtrkid[kMaxBlips];   // track ID of touched track
   bool  blip_incylinder[kMaxBlips];   // is blip within a cylinder near a track
-  int   blip_clustid[kNplanes][kMaxBlips];     // cluster ID per plane
+  int   blip_clustid[kNplanes][kMaxBlips];    // cluster ID per plane
+  int   blip_clustindex[kNplanes][kMaxBlips]; // cluster index per plane
   
-  // --- Neutrino information --
-  
-
+  // --- Reconstructed neutrino slice information (Pandora) --
+  bool  nu_isNeutrino;            // neutrino slice identified by Pandora
+  vfloat_t nu_nuscore;               // neutrino score
+  int   nu_pfp_pdg;               // PDG particle best matching with reco slice
+  float nu_reco_vtx_x;             // reconstructed vertex X [cm]
+  float nu_reco_vtx_y;             // reconstructed vertex Y [cm]
+  float nu_reco_vtx_z;             // reconstructed vertex Z [cm]
+  vint_t    nu_trk_id;        // trackIDs for tracks in this PFP
+  vfloat_t  nu_trk_score;     // track scores for tracks in this PFP
+  vfloat_t  nu_shwr_score;    // shower scores in this PFP
 
   TTree*  calibTree;
   int     acptrk_npts;
@@ -326,9 +370,8 @@ class BlipAnaTreeDataStruct
     mctruth_nu_vtx_z  = -999;
     mctruth_nu_KE     = -999;
 
-    /*
     nprimaries            = 0;    // --- G4 primaries ---
-    FillWith(primary_trackID, -999);
+    FillWith(primary_g4id, -999);
     FillWith(primary_pdg, -99999);
     FillWith(primary_x0,  -999.);
     FillWith(primary_y0,  -999.);
@@ -336,14 +379,14 @@ class BlipAnaTreeDataStruct
     FillWith(primary_Px,  -999.);
     FillWith(primary_Py,  -999.);
     FillWith(primary_Pz,  -999.);
+    FillWith(primary_KE,  -999.);
     FillWith(primary_T0,  -99999.);
-    */
 
-    nparticles            = 0;    // --- G4 particles ---
+    nparts            = 0;    // --- G4 particles ---
     FillWith(part_isPrimary,   false);
-    //FillWith(part_madeHitCol,        false);
+    FillWith(part_isContained,   false);
     FillWith(part_madeClustCol,      false);
-    FillWith(part_trackID,     -999);
+    FillWith(part_g4id,     -999);
     FillWith(part_pdg,         -99999);
     FillWith(part_nDaughters,  -999);
     FillWith(part_mother,      -999);
@@ -369,6 +412,23 @@ class BlipAnaTreeDataStruct
     FillWith(part_depElectrons,-999);
     FillWith(part_depEnergy,   -999.);
     FillWith(part_process,     "");
+    
+    /*
+    nparts_sel            = 0;
+    FillWith(part_sel_g4id, -999);
+    FillWith(part_sel_index, -9);
+    FillWith(part_sel_Px,   -999);
+    FillWith(part_sel_Py,   -999.);
+    FillWith(part_sel_Pz,   -999.);
+    FillWith(part_sel_startPointx, -99999.);
+    FillWith(part_sel_startPointy, -99999.);
+    FillWith(part_sel_startPointz, -99999.);
+    FillWith(part_sel_endPointx,   -99999.);
+    FillWith(part_sel_endPointy,   -99999.);
+    FillWith(part_sel_endPointz,   -99999.);
+    FillWith(part_sel_startT,      -99999.);
+    */
+    
     nedeps                = 0;    // --- EDeps ---
     FillWith(edep_tpc,    -9);
     FillWith(edep_energy, -999);
@@ -381,7 +441,6 @@ class BlipAnaTreeDataStruct
     FillWith(edep_dx,      -99999.);
     FillWith(edep_dz,      -99999.);
     FillWith(edep_allchansgood,  true);
-    FillWith(edep_g4trkid,  -9);
     FillWith(edep_g4id,     -9);
     FillWith(edep_g4qfrac,  -9);
     FillWith(edep_pdg,   -999);
@@ -392,12 +451,13 @@ class BlipAnaTreeDataStruct
     FillWith(edep_blipid, -9);
     nhits                 = 0;    // --- TPC hits ---
     if( saveHitInfo ) {
+      FillWith(hit_id,      -9);
       FillWith(hit_tpc,     -9);
       FillWith(hit_plane,   -9);
       FillWith(hit_wire,    -999);
       FillWith(hit_channel, -999);
       FillWith(hit_peakT,   -999);
-      FillWith(hit_time,    -999);
+      FillWith(hit_driftT,  -999);
       FillWith(hit_rms,     -999);
       FillWith(hit_amp,      -999);
       FillWith(hit_area,    -999);
@@ -406,11 +466,12 @@ class BlipAnaTreeDataStruct
       FillWith(hit_charge,  -999);
       FillWith(hit_ismatch, -9);
       FillWith(hit_trkid,   -9);
-      FillWith(hit_g4trkid, -999);
+      FillWith(hit_g4id, -999);
       FillWith(hit_g4frac,  -9);
       FillWith(hit_g4energy,-999);
       FillWith(hit_g4charge,-999);
       FillWith(hit_clustid, -9);
+      FillWith(hit_clustindex, -9);
       FillWith(hit_blipid,  -9);
       FillWith(hit_gof,     -9);
     }
@@ -431,11 +492,11 @@ class BlipAnaTreeDataStruct
       FillWith(trk_endd,    -999);      
     }
     nclusts                   = 0;    // --- Hit Clusters ---
+    if( saveClustInfo ) {
     FillWith(clust_id,        -9);
     FillWith(clust_tpc,       -9);
     FillWith(clust_plane,     -9);
     FillWith(clust_nwires,    -9);
-    FillWith(clust_nwiresNoisy,    -9);
     FillWith(clust_nwiresBad,    -9);
     FillWith(clust_bydeadwire, false);
     FillWith(clust_nhits,     -9);
@@ -448,6 +509,8 @@ class BlipAnaTreeDataStruct
     FillWith(clust_timespan,  -9);
     FillWith(clust_starttime, -999);
     FillWith(clust_endtime,   -999);
+    FillWith(clust_starttick, -999);
+    FillWith(clust_endtick,   -999);
     FillWith(clust_amp,       -9);
     FillWith(clust_pulsetrain,  false);
     FillWith(clust_edepid,    -9);
@@ -455,6 +518,7 @@ class BlipAnaTreeDataStruct
     FillWith(clust_ismatch,   false);
     FillWith(clust_touchtrk,   false);
     FillWith(clust_touchtrkid,  -9);
+    }
     nblips                    = 0;
     FillWith(blip_id,         -9);
     FillWith(blip_tpc,        -9);
@@ -476,22 +540,41 @@ class BlipAnaTreeDataStruct
     FillWith(blip_touchtrkid,  -9);
     FillWith(blip_incylinder, false);
     FillWith(blip_edepid,     -9);
+    FillWith(blip_g4id,     -9);
     for(int i=0; i<kNplanes; i++){ 
       FillWith(blip_clustid[i],-9);
+      FillWith(blip_clustindex[i],-9);
     }
+
+    nu_isNeutrino           = false;
+    nu_nuscore              .clear();
+    nu_pfp_pdg              = -999;
+    nu_reco_vtx_x           = -999;
+    nu_reco_vtx_y           = -999;
+    nu_reco_vtx_z           = -999;
+    nu_trk_score            .clear();
+    nu_trk_id               .clear();
+    nu_shwr_score           .clear();
   }
 
   // === Function for resizing vectors (if necessary) ===
   // To be called after numbers of hits/tracks/particles
   // in the event has been determined
   void Resize() {
-    if(nparticles) part_process.assign(nparticles,"");
+    if(nparts) part_process.assign(nparts,"");
   }
       
   // === Function for initializing tree branches ===
   void MakeTree(){
     
     art::ServiceHandle<art::TFileService> tfs;
+    
+    if( saveNuSelTree ) {
+    selTree = tfs->make<TTree>("nuselectiontree","nu selection tree");
+    selTree->Branch("event",&event,"event/I");
+    selTree->Branch("run",&run,"run/I");
+    selTree->Branch("subrun",&subrun,"subrun/I");
+    }
    
     evtTree = tfs->make<TTree>(treeName.c_str(),"analysis tree");
     evtTree->Branch("event",&event,"event/I");
@@ -502,76 +585,78 @@ class BlipAnaTreeDataStruct
     evtTree->Branch("lifetime",&lifetime,"lifetime/F");
     evtTree->Branch("badchans",&badchans,"badchans/I");
     evtTree->Branch("longtrks",&longtrks,"longtrks/I");
+    
+    if( saveTrkInfo ) {
+    evtTree->Branch("ntrks",&ntrks,"ntrks/I");
+    evtTree->Branch("trk_id",trk_id,"trk_id[ntrks]/I");       
+    evtTree->Branch("trk_length",trk_length,"trk_length[ntrks]/F");
+    evtTree->Branch("trk_isMC",trk_isMC,"trk_isMC[ntrks]/O");
+    evtTree->Branch("trk_g4id",trk_g4id,"trk_g4id[ntrks]/I");
+    evtTree->Branch("trk_startx",trk_startx,"trk_startx[ntrks]/F");
+    evtTree->Branch("trk_starty",trk_starty,"trk_starty[ntrks]/F");
+    evtTree->Branch("trk_startz",trk_startz,"trk_startz[ntrks]/F");
+    evtTree->Branch("trk_endx",trk_endx,"trk_endx[ntrks]/F");
+    evtTree->Branch("trk_endy",trk_endy,"trk_endy[ntrks]/F");
+    evtTree->Branch("trk_endz",trk_endz,"trk_endz[ntrks]/F");
+    }
       
     if( saveHitInfo ) {
-      evtTree->Branch("nhits",&nhits,"nhits/I");
-      //evtTree->Branch("hit_tpc",hit_tpc,"hit_tpc[nhits]/I"); 
-      evtTree->Branch("hit_plane",hit_plane,"hit_plane[nhits]/I"); 
-      evtTree->Branch("hit_wire",hit_wire,"hit_wire[nhits]/I"); 
-      evtTree->Branch("hit_peakT",hit_peakT,"hit_peakT[nhits]/F"); 
-      evtTree->Branch("hit_time",hit_time,"hit_time[nhits]/F"); 
-      evtTree->Branch("hit_rms",hit_rms,"hit_rms[nhits]/F"); 
-      evtTree->Branch("hit_amp",hit_amp,"hit_amp[nhits]/F"); 
-      evtTree->Branch("hit_area",hit_area,"hit_area[nhits]/F"); 
-      evtTree->Branch("hit_sumadc",hit_sumadc,"hit_sumadc[nhits]/F"); 
-      evtTree->Branch("hit_mult",hit_mult,"hit_mult[nhits]/I"); 
-      evtTree->Branch("hit_charge",hit_charge,"hit_charge[nhits]/F");
-      evtTree->Branch("hit_ismatch",hit_ismatch,"hit_ismatch[nhits]/I");
-      evtTree->Branch("hit_trkid",hit_trkid,"hit_trkid[nhits]/I"); 
-      if( saveTruthInfo ) {
-      evtTree->Branch("hit_g4trkid",hit_g4trkid,"hit_g4trkid[nhits]/I");
-      evtTree->Branch("hit_g4frac",hit_g4frac,"hit_g4frac[nhits]/F"); 
-      evtTree->Branch("hit_g4energy",hit_g4energy,"hit_g4energy[nhits]/F"); 
-      evtTree->Branch("hit_g4charge",hit_g4charge,"hit_g4charge[nhits]/F"); 
-      }
-      evtTree->Branch("hit_clustid",hit_clustid,"hit_clustid[nhits]/I"); 
-      evtTree->Branch("hit_blipid",hit_blipid,"hit_blipid[nhits]/I");
-      evtTree->Branch("hit_gof",hit_gof,"hit_gof[nhits]/F");
+    evtTree->Branch("nhits",&nhits,"nhits/I");
+    //evtTree->Branch("hit_tpc",hit_tpc,"hit_tpc[nhits]/I"); 
+    evtTree->Branch("hit_id",hit_id,"hit_id[nhits]/I"); 
+    evtTree->Branch("hit_plane",hit_plane,"hit_plane[nhits]/I"); 
+    evtTree->Branch("hit_wire",hit_wire,"hit_wire[nhits]/I"); 
+    evtTree->Branch("hit_peakT",hit_peakT,"hit_peakT[nhits]/F"); 
+    evtTree->Branch("hit_driftT",hit_driftT,"hit_driftT[nhits]/F"); 
+    evtTree->Branch("hit_rms",hit_rms,"hit_rms[nhits]/F"); 
+    evtTree->Branch("hit_amp",hit_amp,"hit_amp[nhits]/F"); 
+    //evtTree->Branch("hit_area",hit_area,"hit_area[nhits]/F"); 
+    //evtTree->Branch("hit_sumadc",hit_sumadc,"hit_sumadc[nhits]/F"); 
+    evtTree->Branch("hit_mult",hit_mult,"hit_mult[nhits]/I"); 
+    evtTree->Branch("hit_charge",hit_charge,"hit_charge[nhits]/F");
+    evtTree->Branch("hit_ismatch",hit_ismatch,"hit_ismatch[nhits]/I");
+    evtTree->Branch("hit_trkid",hit_trkid,"hit_trkid[nhits]/I"); 
+    if( saveTruthInfo ) {
+    evtTree->Branch("hit_g4id",hit_g4id,"hit_g4id[nhits]/I");
+    evtTree->Branch("hit_g4frac",hit_g4frac,"hit_g4frac[nhits]/F"); 
+    evtTree->Branch("hit_g4energy",hit_g4energy,"hit_g4energy[nhits]/F"); 
+    evtTree->Branch("hit_g4charge",hit_g4charge,"hit_g4charge[nhits]/F"); 
+    }
+    evtTree->Branch("hit_clustid",hit_clustid,"hit_clustid[nhits]/I"); 
+    evtTree->Branch("hit_blipid",hit_blipid,"hit_blipid[nhits]/I");
+    evtTree->Branch("hit_gof",hit_gof,"hit_gof[nhits]/F");
     }
  
-    if( saveTrkInfo ) {
-      evtTree->Branch("ntrks",&ntrks,"ntrks/I");
-      evtTree->Branch("trk_id",trk_id,"trk_id[ntrks]/I");       
-      evtTree->Branch("trk_length",trk_length,"trk_length[ntrks]/F");
-      evtTree->Branch("trk_isMC",trk_isMC,"trk_isMC[ntrks]/O");
-      evtTree->Branch("trk_g4id",trk_g4id,"trk_g4id[ntrks]/I");
-      evtTree->Branch("trk_startx",trk_startx,"trk_startx[ntrks]/F");
-      evtTree->Branch("trk_starty",trk_starty,"trk_starty[ntrks]/F");
-      evtTree->Branch("trk_startz",trk_startz,"trk_startz[ntrks]/F");
-      evtTree->Branch("trk_endx",trk_endx,"trk_endx[ntrks]/F");
-      evtTree->Branch("trk_endy",trk_endy,"trk_endy[ntrks]/F");
-      evtTree->Branch("trk_endz",trk_endz,"trk_endz[ntrks]/F");
-    }
 
     if( saveClustInfo ) {
-      evtTree->Branch("nclusts",        &nclusts,       "nclusts/I");
-      //evtTree->Branch("clust_id",       clust_id,       "clust_id[nclusts]/I");
-      evtTree->Branch("clust_plane",    clust_plane,    "clust_plane[nclusts]/I");
-      //evtTree->Branch("clust_wire",     clust_wire,     "clust_wire[nclusts]/I");
-      evtTree->Branch("clust_nhits",    clust_nhits,    "clust_nhits[nclusts]/I");
-      evtTree->Branch("clust_nwires",   clust_nwires,   "clust_nwires[nclusts]/I");
-      evtTree->Branch("clust_nwiresNoisy",   clust_nwiresNoisy,   "clust_nwiresNoisy[nclusts]/I");
-      //evtTree->Branch("clust_nticks",   clust_nticks,   "clust_nticks[nclusts]/I");
-      evtTree->Branch("clust_startwire",clust_startwire,"clust_startwire[nclusts]/I");
-      evtTree->Branch("clust_endwire",  clust_endwire,  "clust_endwire[nclusts]/I");
-      evtTree->Branch("clust_bydeadwire",   clust_bydeadwire,   "clust_bydeadwire[nclusts]/O");
-      evtTree->Branch("clust_time",     clust_time,     "clust_time[nclusts]/F");
-      evtTree->Branch("clust_timespan", clust_timespan, "clust_timespan[nclusts]/F");
-      //evtTree->Branch("clust_deadwiresep",   clust_deadwiresep,   "clust_deadwiresep[nclusts]/I");
-      //evtTree->Branch("clust_nnfhits",  clust_nnfhits,  "clust_nnfhits[nclusts]/I");
-      //evtTree->Branch("clust_pulsetrain",  clust_pulsetrain,  "clust_pulsetrain[nclusts]/O");
-      //evtTree->Branch("clust_starttime",clust_starttime,"clust_starttime[nclusts]/F");
-      //evtTree->Branch("clust_endtime",  clust_endtime,"clust_endtime[nclusts]/F");
-      evtTree->Branch("clust_charge",   clust_charge,   "clust_charge[nclusts]/I");
-      evtTree->Branch("clust_chargeErr",   clust_chargeErr,   "clust_chargeErr[nclusts]/I");
-      evtTree->Branch("clust_amp",      clust_amp,      "clust_amp[nclusts]/F");
-      //evtTree->Branch("clust_gof",      clust_gof,      "clust_gof[nclusts]/F");
-      //evtTree->Branch("clust_ratio",      clust_ratio,  "clust_ratio[nclusts]/F");
-      evtTree->Branch("clust_ismatch",  clust_ismatch,  "clust_ismatch[nclusts]/O");
-      evtTree->Branch("clust_touchtrk",  clust_touchtrk,  "clust_touchtrk[nclusts]/O");
-      if( saveTrkInfo ) evtTree->Branch("clust_touchtrkid",  clust_touchtrkid,  "clust_touchtrkid[nclusts]/I");
-      evtTree->Branch("clust_blipid",   clust_blipid,   "clust_blipid[nclusts]/I");
-      if( saveTrueEDeps ) evtTree->Branch("clust_edepid",   clust_edepid,   "clust_edepid[nclusts]/I");
+    evtTree->Branch("nclusts",        &nclusts,       "nclusts/I");
+    evtTree->Branch("clust_id",       clust_id,       "clust_id[nclusts]/I");
+    evtTree->Branch("clust_plane",    clust_plane,    "clust_plane[nclusts]/I");
+    //evtTree->Branch("clust_wire",     clust_wire,     "clust_wire[nclusts]/I");
+    evtTree->Branch("clust_nhits",    clust_nhits,    "clust_nhits[nclusts]/I");
+    evtTree->Branch("clust_nwires",   clust_nwires,   "clust_nwires[nclusts]/I");
+    evtTree->Branch("clust_nwiresBad",   clust_nwiresBad,   "clust_nwiresBad[nclusts]/I");
+    //evtTree->Branch("clust_nticks",   clust_nticks,   "clust_nticks[nclusts]/I");
+    evtTree->Branch("clust_startwire",clust_startwire,"clust_startwire[nclusts]/I");
+    evtTree->Branch("clust_endwire",  clust_endwire,  "clust_endwire[nclusts]/I");
+    evtTree->Branch("clust_bydeadwire",   clust_bydeadwire,   "clust_bydeadwire[nclusts]/O");
+    evtTree->Branch("clust_time",    clust_time,    "clust_time[nclusts]/F");
+    evtTree->Branch("clust_timespan", clust_timespan, "clust_timespan[nclusts]/F");
+    //evtTree->Branch("clust_deadwiresep",   clust_deadwiresep,   "clust_deadwiresep[nclusts]/I");
+    //evtTree->Branch("clust_nnfhits",  clust_nnfhits,  "clust_nnfhits[nclusts]/I");
+    //evtTree->Branch("clust_pulsetrain",  clust_pulsetrain,  "clust_pulsetrain[nclusts]/O");
+    evtTree->Branch("clust_starttick",clust_starttick,"clust_starttick[nclusts]/I");
+    evtTree->Branch("clust_endtick",  clust_endtick,"clust_endtick[nclusts]/I");
+    evtTree->Branch("clust_charge",   clust_charge,   "clust_charge[nclusts]/I");
+    //evtTree->Branch("clust_chargeErr",   clust_chargeErr,   "clust_chargeErr[nclusts]/I");
+    evtTree->Branch("clust_amp",      clust_amp,      "clust_amp[nclusts]/F");
+    //evtTree->Branch("clust_gof",      clust_gof,      "clust_gof[nclusts]/F");
+    //evtTree->Branch("clust_ratio",      clust_ratio,  "clust_ratio[nclusts]/F");
+    evtTree->Branch("clust_ismatch",  clust_ismatch,  "clust_ismatch[nclusts]/O");
+    evtTree->Branch("clust_touchtrk",  clust_touchtrk,  "clust_touchtrk[nclusts]/O");
+    if( saveTrkInfo ) evtTree->Branch("clust_touchtrkid",  clust_touchtrkid,  "clust_touchtrkid[nclusts]/I");
+    evtTree->Branch("clust_blipid",   clust_blipid,   "clust_blipid[nclusts]/I");
+    if( saveTrueEDeps ) evtTree->Branch("clust_edepid",   clust_edepid,   "clust_edepid[nclusts]/I");
     }
 
     evtTree->Branch("nblips",&nblips,"nblips/I");
@@ -594,27 +679,42 @@ class BlipAnaTreeDataStruct
       evtTree->Branch("blip_proxtrkid",blip_proxtrkid,"blip_proxtrkid[nblips]/I");
       evtTree->Branch("blip_touchtrkid",blip_touchtrkid,"blip_touchtrkid[nblips]/I");
     }
+    evtTree->Branch("blip_g4id",blip_g4id,"blip_g4id[nblips]/I");
     if( saveTrueEDeps ) evtTree->Branch("blip_edepid",blip_edepid,"blip_edepid[nblips]/I");
     for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_clustid",i),blip_clustid[i],Form("blip_pl%i_clustid[nblips]/I",i));
-    
+
+    if( saveNuInfo ) {
+    auto vf = "std::vector<float>";
+    auto vi = "std::vector<int>";
+    evtTree->Branch("nu_isNeutrino",&nu_isNeutrino,"nu_isNeutrino/O");
+    //evtTree->Branch("nu_nuscore",&nu_nuscore,"nu_nuscore/F");
+    evtTree->Branch("nu_nuscore", vf, &nu_nuscore);
+    evtTree->Branch("nu_pfp_pdg",&nu_pfp_pdg,"nu_pfp_pdg/I");
+    evtTree->Branch("nu_reco_vtx_x",&nu_reco_vtx_x,"nu_reco_vtx_x/F");
+    evtTree->Branch("nu_reco_vtx_y",&nu_reco_vtx_y,"nu_reco_vtx_y/F");
+    evtTree->Branch("nu_reco_vtx_z",&nu_reco_vtx_z,"nu_reco_vtx_z/F");
+    evtTree->Branch("nu_trk_id", vi, &nu_trk_id);
+    evtTree->Branch("nu_trk_score", vf, &nu_trk_score);
+    evtTree->Branch("nu_shwr_score", vf, &nu_shwr_score);
+    evtTree->Branch("mctruth_nu_pdg",&mctruth_nu_pdg,"mctruth_nu_pdg/I");
+    evtTree->Branch("mctruth_nu_ccnc",&mctruth_nu_ccnc,"mctruth_nu_ccnc/I");
+    evtTree->Branch("mctruth_nu_mode",&mctruth_nu_mode,"mctruth_nu_mode/I");
+    evtTree->Branch("mctruth_nu_vtx_x",&mctruth_nu_vtx_x,"mctruth_nu_vtx_x/F");
+    evtTree->Branch("mctruth_nu_vtx_y",&mctruth_nu_vtx_y,"mctruth_nu_vtx_y/F");
+    evtTree->Branch("mctruth_nu_vtx_z",&mctruth_nu_vtx_z,"mctruth_nu_vtx_z/F");
+    evtTree->Branch("mctruth_nu_KE",&mctruth_nu_KE,"mctruth_nu_KE/F");
+    }
     
     if( saveTruthInfo ) {
-      
-      evtTree->Branch("mctruth_nu_pdg",&mctruth_nu_pdg,"mctruth_nu_pdg/I");
-      evtTree->Branch("mctruth_nu_ccnc",&mctruth_nu_ccnc,"mctruth_nu_ccnc/I");
-      evtTree->Branch("mctruth_nu_mode",&mctruth_nu_mode,"mctruth_nu_mode/I");
-      evtTree->Branch("mctruth_nu_vtx_x",&mctruth_nu_vtx_x,"mctruth_nu_vtx_x/F");
-      evtTree->Branch("mctruth_nu_vtx_y",&mctruth_nu_vtx_y,"mctruth_nu_vtx_y/F");
-      evtTree->Branch("mctruth_nu_vtx_z",&mctruth_nu_vtx_z,"mctruth_nu_vtx_z/F");
-      evtTree->Branch("mctruth_nu_KE",&mctruth_nu_KE,"mctruth_nu_KE/F");
-      
+
       if( savePrimaries ) {
       evtTree->Branch("nprimaries",&nprimaries,"nprimaries/I");
-      evtTree->Branch("primary_trackID",primary_trackID,"primary_trackID[nprimaries]/I");
+      evtTree->Branch("primary_g4id",primary_g4id,"primary_g4id[nprimaries]/I");
       evtTree->Branch("primary_pdg",primary_pdg,"primary_pdg[nprimaries]/I");
-      evtTree->Branch("primary_Px",primary_Px,"primary_Px[nprimaries]/F");
-      evtTree->Branch("primary_Py",primary_Py,"primary_Py[nprimaries]/F");
-      evtTree->Branch("primary_Pz",primary_Pz,"primary_Pz[nprimaries]/F");
+      //evtTree->Branch("primary_Px",primary_Px,"primary_Px[nprimaries]/F");
+      //evtTree->Branch("primary_Py",primary_Py,"primary_Py[nprimaries]/F");
+      //evtTree->Branch("primary_Pz",primary_Pz,"primary_Pz[nprimaries]/F");
+      evtTree->Branch("primary_KE",primary_KE,"primary_KE[nprimaries]/F");
       evtTree->Branch("primary_x0",primary_x0,"primary_x0[nprimaries]/F");
       evtTree->Branch("primary_y0",primary_y0,"primary_y0[nprimaries]/F");
       evtTree->Branch("primary_z0",primary_z0,"primary_z0[nprimaries]/F");
@@ -622,40 +722,53 @@ class BlipAnaTreeDataStruct
       }
       
       if( saveTrueParticles ) {
-      evtTree->Branch("nparticles",&nparticles,"nparticles/I");
+      evtTree->Branch("nparticles",&nparts,"nparticles/I");
       evtTree->Branch("part_isPrimary",part_isPrimary,"part_isPrimary[nparticles]/O");
-      //evtTree->Branch("part_madeHitCol",part_madeHitCol,"part_madeHitCol[nparticles]/O");
+      evtTree->Branch("part_isContained",part_isContained,"part_isContained[nparticles]/O");
       //evtTree->Branch("part_madeClustCol",part_madeClustCol,"part_madeClustCol[nparticles]/O");
-      evtTree->Branch("part_trackID",part_trackID,"part_trackID[nparticles]/I");
+      evtTree->Branch("part_g4id",part_g4id,"part_g4id[nparticles]/I");
       evtTree->Branch("part_pdg",part_pdg,"part_pdg[nparticles]/I");
       evtTree->Branch("part_nDaughters",part_nDaughters,"part_nDaughters[nparticles]/I");
       evtTree->Branch("part_mother",part_mother,"part_mother[nparticles]/I");
       evtTree->Branch("part_KE",part_KE,"part_KE[nparticles]/F");
-      //evtTree->Branch("part_endKE",part_endKE,"part_endKE[nparticles]/F");
+      evtTree->Branch("part_endKE",part_endKE,"part_endKE[nparticles]/F");
       //evtTree->Branch("part_mass",part_mass,"part_mass[nparticles]/F");
       //evtTree->Branch("part_P",part_P,"part_P[nparticles]/F");
-      //evtTree->Branch("part_Px",part_Px,"part_Px[nparticles]/F");
-      //evtTree->Branch("part_Py",part_Py,"part_Py[nparticles]/F");
-      //evtTree->Branch("part_Pz",part_Pz,"part_Pz[nparticles]/F");
-      //evtTree->Branch("part_startPointx",part_startPointx,"part_startPointx[nparticles]/F");
-      //evtTree->Branch("part_startPointy",part_startPointy,"part_startPointy[nparticles]/F");
-      //evtTree->Branch("part_startPointz",part_startPointz,"part_startPointz[nparticles]/F");
-      //evtTree->Branch("part_endPointx",part_endPointx,"part_endPointx[nparticles]/F");
-      //evtTree->Branch("part_endPointy",part_endPointy,"part_endPointy[nparticles]/F");
-      //evtTree->Branch("part_endPointz",part_endPointz,"part_endPointz[nparticles]/F");
-      evtTree->Branch("part_startT",part_startT,"part_startT[nparticles]/F");
       //evtTree->Branch("part_endT",part_endT,"part_endT[nparticles]/F");
       evtTree->Branch("part_pathlen",part_pathlen,"part_pathlen[nparticles]/F");
       evtTree->Branch("part_depEnergy",part_depEnergy,"part_depEnergy[nparticles]/F");
       //evtTree->Branch("part_depElectrons",part_depElectrons,"part_depElectrons[nparticles]/I");
       //evtTree->Branch("part_numElectrons",part_numElectrons,"part_numElectrons[nparticles]/F");
       evtTree->Branch("part_process",&part_process);
+      evtTree->Branch("part_Px",part_Px,"part_Px[nparticles]/F");
+      evtTree->Branch("part_Py",part_Py,"part_Py[nparticles]/F");
+      evtTree->Branch("part_Pz",part_Pz,"part_Pz[nparticles]/F");
+      evtTree->Branch("part_startPointx",part_startPointx,"part_startPointx[nparticles]/F");
+      evtTree->Branch("part_startPointy",part_startPointy,"part_startPointy[nparticles]/F");
+      evtTree->Branch("part_startPointz",part_startPointz,"part_startPointz[nparticles]/F");
+      evtTree->Branch("part_endPointx",part_endPointx,"part_endPointx[nparticles]/F");
+      evtTree->Branch("part_endPointy",part_endPointy,"part_endPointy[nparticles]/F");
+      evtTree->Branch("part_endPointz",part_endPointz,"part_endPointz[nparticles]/F");
+      /*
+      evtTree->Branch("nparticles_sel",&nparts_sel,"nparticles_sel/I");
+      evtTree->Branch("part_sel_g4id",part_sel_g4id,"part_sel_g4id[nparticles_sel]/I");
+      //evtTree->Branch("part_sel_index",part_sel_index,"part_sel_index[nparticles_sel]/I");
+      evtTree->Branch("part_sel_Px",part_sel_Px,"part_sel_Px[nparticles_sel]/F");
+      evtTree->Branch("part_sel_Py",part_sel_Py,"part_sel_Py[nparticles_sel]/F");
+      evtTree->Branch("part_sel_Pz",part_sel_Pz,"part_sel_Pz[nparticles_sel]/F");
+      evtTree->Branch("part_sel_startPointx",part_sel_startPointx,"part_sel_startPointx[nparticles_sel]/F");
+      evtTree->Branch("part_sel_startPointy",part_sel_startPointy,"part_sel_startPointy[nparticles_sel]/F");
+      evtTree->Branch("part_sel_startPointz",part_sel_startPointz,"part_sel_startPointz[nparticles_sel]/F");
+      evtTree->Branch("part_sel_endPointx",part_sel_endPointx,"part_sel_endPointx[nparticles_sel]/F");
+      evtTree->Branch("part_sel_endPointy",part_sel_endPointy,"part_sel_endPointy[nparticles_sel]/F");
+      evtTree->Branch("part_sel_endPointz",part_sel_endPointz,"part_sel_endPointz[nparticles_sel]/F");
+      evtTree->Branch("part_sel_startT",part_sel_startT,"part_sel_startT[nparticles_sel]/F");
+      */
       }
       
       if( saveTrueEDeps ) {
       evtTree->Branch("nedeps",&nedeps,"nedeps/I");
       evtTree->Branch("edep_g4id",edep_g4id,"edep_g4id[nedeps]/I"); 
-      evtTree->Branch("edep_g4trkid",edep_g4trkid,"edep_g4trkid[nedeps]/I"); 
       evtTree->Branch("edep_g4qfrac",edep_g4qfrac,"edep_g4qfrac[nedeps]/F"); 
       evtTree->Branch("edep_isPrimary",edep_isPrimary,"edep_isPrimary[nedeps]/O"); 
       evtTree->Branch("edep_allchansgood",edep_allchansgood,"edep_allchansgood[nedeps]/O"); 
@@ -693,6 +806,11 @@ class BlipAnaTreeDataStruct
       //calibTree->Branch("acptrk_dEdx",&acptrk_dEdx,"acptrk_dEdx[acptrk_npts]/F");
       //calibTree->Branch("acptrk_tdrift",&acptrk_tdrift,"acptrk_tdrift[acptrk_npts]/F");
   }
+
+  void FillTrees(){
+    evtTree->Fill();
+    if( saveNuSelTree ) selTree->Fill();
+  }
   
 
 };//BlipAnaTreeDataStruct class
@@ -720,6 +838,7 @@ class BlipAna : public art::EDAnalyzer
   void    PrintBlipInfo(const blipobj::Blip&);
   float   Truncate(float, double = 0.1);
 
+
   // --- Data and calo objects ---
   BlipAnaTreeDataStruct*  fData;
   blip::BlipRecoAlg*      fBlipAlg;
@@ -736,7 +855,7 @@ class BlipAna : public art::EDAnalyzer
 
   // --- Counters and such ---
   bool  fIsRealData         = false;
-  bool  fIsMC               = false;
+  bool  fEvtIsMC            = false;
   int   fNumEvents          = 0;
   int   fNumHits[3]         = {};
   int   fNumHitsUntracked[3]= {};
@@ -761,9 +880,17 @@ class BlipAna : public art::EDAnalyzer
   art::InputTag fMCTproducer;
   art::InputTag fTRKproducer;
   
+  void    BuildPFPMap(const ProxyPfpColl_t&);
+  void    AddDaughters(const ProxyPfpElem_t &pfp_pxy,
+                    const ProxyPfpColl_t &pfp_pxy_col,
+                    std::vector<ProxyPfpElem_t> &slice_v);
+  
+  // a map linking the PFP Self() attribute used for hierarchy building to the PFP index in the event record
+  std::map<unsigned int, unsigned int> _pfpmap;
+  
   // selection tool
-  //std::unique_ptr<::selection::SelectionToolBase> _selectionTool;
-  //std::vector<std::unique_ptr<::analysis::AnalysisToolBase>> _analysisToolsVec;
+  std::vector<std::unique_ptr<::analysis::AnalysisToolBase>> _analysisToolsVec;
+
 
   // --- Histograms ---
   TH1D*   h_part_process;
@@ -1073,7 +1200,8 @@ BlipAna::BlipAna(fhicl::ParameterSet const& pset) :
   fSavePlaneInfo  = pset.get<std::vector<bool>>     ("SavePlaneInfo",   {true,true,true});
   fDebugMode      = pset.get<bool>                  ("DebugMode",       false);
   fDoACPTrkCalib  = pset.get<bool>                  ("DoACPTrkCalib",   true);
-  
+
+
   fPFPproducer = pset.get<art::InputTag>("PFPproducer","pandora");
   fSHRproducer = pset.get<art::InputTag>("SHRproducer","shrreco3d");
   fHITproducer = pset.get<art::InputTag>("HITproducer","pandora");
@@ -1084,30 +1212,45 @@ BlipAna::BlipAna(fhicl::ParameterSet const& pset) :
   fMCTproducer = pset.get<art::InputTag>("MCTproducer","generator");
   fTRKproducer = pset.get<art::InputTag>("TRKproducer","pandora");
 
-  // configure and construct Selection Tool
-  //const fhicl::ParameterSet &selection_pset = pset.get<fhicl::ParameterSet>("NuSelectionTool");
-  //_selectionTool = art::make_tool<::selection::SelectionToolBase>(selection_pset);
-
-  // pass the TTree to the selection tool so that any branch can be added to it
-  //_selectionTool->setBranches(_tree);
-
   // data tree object
   fData = new BlipAnaTreeDataStruct();
-  fData ->treeName        = pset.get<std::string> ("EventTreeName", "anatree");
-  fData ->saveTruthInfo   = pset.get<bool>        ("SaveTruthInfo", true);
-  fData ->saveTrueParticles = pset.get<bool>      ("SaveTrueParticles", true);
-  fData ->savePrimaries     = pset.get<bool>      ("SavePrimaries", false);
-  fData ->saveTrueEDeps = pset.get<bool>          ("SaveTrueEDeps", true);
-  fData ->saveTrkInfo     = pset.get<bool>        ("SaveTrkInfo",   true);
-  fData ->saveHitInfo     = pset.get<bool>        ("SaveHitInfo",   true);
-  fData ->saveClustInfo   = pset.get<bool>        ("SaveClustInfo", true);
+  fData ->treeName            = pset.get<std::string> ("EventTreeName", "anatree");
+  fData ->saveTruthInfo       = pset.get<bool>  ("SaveTruthInfo",       true);
+  fData ->saveTrueParticles   = pset.get<bool>  ("SaveTrueParticles",   true);
+  fData ->savePrimaries       = pset.get<bool>  ("SavePrimaries",       true);
+  fData ->saveTrueEDeps       = pset.get<bool>  ("SaveTrueEDeps",       true);
+  fData ->saveTrkInfo         = pset.get<bool>  ("SaveTrkInfo",         true);
+  fData ->saveHitInfo         = pset.get<bool>  ("SaveHitInfo",         false);
+  fData ->saveHitInfo_Blips   = pset.get<bool>  ("SaveHitInfo_Blips",   false);
+  fData ->saveHitInfo_Truth   = pset.get<bool>  ("SaveHitInfo_Truth",   false);
+  fData ->saveClustInfo       = pset.get<bool>  ("SaveClustInfo",       true);
+  fData ->saveClustInfo_Blips = pset.get<bool>  ("SaveClustInfo_Blips", false);
+  fData ->saveClustInfo_Truth = pset.get<bool>  ("SaveClustInfo_Truth", false);
+  fData ->saveBlipInfo_Truth  = pset.get<bool>  ("SaveBlipInfo_Truth",  false);
+  fData ->saveNuInfo          = pset.get<bool>  ("SaveNeutrinoInfo",    true);
+  fData ->saveNuSelTree       = pset.get<bool>  ("SaveNuSelectionTree", false);
   fData ->Clear();
   fData ->MakeTree();
   if( fDoACPTrkCalib ) fData->MakeCalibTree();
 
   // initialize histograms
   InitializeHistograms();
-    
+  
+  // configure and construct Analysis Tool
+  auto const tool_psets = pset.get<fhicl::ParameterSet>("NuAnalysisTools");
+  for (auto const &tool_pset_labels : tool_psets.get_pset_names())
+  {
+    auto const tool_pset = tool_psets.get<fhicl::ParameterSet>(tool_pset_labels);
+    _analysisToolsVec.push_back(art::make_tool<::analysis::AnalysisToolBase>(tool_pset));
+  }
+
+  // pass the TTree to the analysis tool so that any branch can be added to it
+  if( fData->saveNuSelTree ) {
+    for (size_t i = 0; i < _analysisToolsVec.size(); i++)
+      _analysisToolsVec[i]->setBranches(fData->selTree);
+  }
+  
+
   /*
   //==================================================
   // Map out the space charge effects
@@ -1174,8 +1317,6 @@ void BlipAna::analyze(const art::Event& evt)
   fIsRealData       = evt.isRealData();
   fNumEvents++;
   
-  //_selectionTool->SetData(fIsRealData);
-
   // Get timestamp
   unsigned long long int tsval = evt.time().value();
   const unsigned long int mask32 = 0xFFFFFFFFUL;
@@ -1208,7 +1349,8 @@ void BlipAna::analyze(const art::Event& evt)
   std::vector<blipobj::HitInfo>   hitinfo;
   std::vector<blipobj::HitClust>  hitclust;
   std::vector<blipobj::Blip>      blips;  
-  
+ 
+
   //===========================================
   // Check if blip objects were saved to the event;
   // if not, then run the reconstruction
@@ -1318,14 +1460,14 @@ void BlipAna::analyze(const art::Event& evt)
     art::fill_ptr_vector(tracklist, tracklistHandle);
  
   // Resize data struct objects
-  fData->nhits      = (int)hitlist.size();
-  fData->nparticles = std::min((int)plist.size(),(int)kMaxG4);
+  //fData->nhits      = (int)hitlist.size();
+  fData->nparts     = std::min((int)plist.size(),(int)kMaxG4);
   fData->ntrks      = (int)tracklist.size();
   fData->badchans   = fBlipAlg->EvtBadChanCount;
   fData->Resize();
  
   // flag this data as MC
-  fIsMC = ( plist.size()>0 );
+  fEvtIsMC = ( plist.size()>0 );
   
   //std::cout<<"Retrieved "<<hitlist.size()<<" hits from "<<fHitProducer<<"\n";
   //std::cout<<"Retrieved "<<tracklist.size()<<" tracks from "<<fTrkProducer<<"\n";
@@ -1358,6 +1500,8 @@ void BlipAna::analyze(const art::Event& evt)
 												    proxy::withAssociated<recob::PCAxis>(fPCAproducer),
 												    proxy::withAssociated<recob::Shower>(fSHRproducer),
 												    proxy::withAssociated<recob::SpacePoint>(fPFPproducer));
+  
+    BuildPFPMap(pfp_proxy);
     
     // loop through PFParticles
     for (const ProxyPfpElem_t &pfp_pxy : pfp_proxy)
@@ -1365,13 +1509,13 @@ void BlipAna::analyze(const art::Event& evt)
       // get metadata for this PFP
       const auto &pfParticleMetadataList = pfp_pxy.get<larpandoraobj::PFParticleMetadata>();
 
-      // find the neutrino
+      //  find neutrino candidate
       if (pfp_pxy->IsPrimary() == false) continue;
       auto PDG = fabs(pfp_pxy->PdgCode());
+      fData->nu_pfp_pdg=PDG;
       if ( (PDG == 12) || (PDG == 14) ) 
       {
         std::cout<<"Found a neutrino PFP\n";
-
         if (pfParticleMetadataList.size() != 0)
         {
           for (unsigned int j = 0; j < pfParticleMetadataList.size(); ++j)
@@ -1380,15 +1524,91 @@ void BlipAna::analyze(const art::Event& evt)
             auto pfParticlePropertiesMap = pfParticleMetadata->GetPropertiesMap();
             if (!pfParticlePropertiesMap.empty())
             {
-              std::cout << " Found PFParticle " << pfp_pxy->Self() << " with: " << std::endl;
               for (std::map<std::string, float>::const_iterator it = pfParticlePropertiesMap.begin(); it != pfParticlePropertiesMap.end(); ++it)
               {
-                std::cout << "  - " << it->first << " = " << it->second << std::endl;
+                if( it->first == "IsNeutrino" ) fData->nu_isNeutrino  = it->second;
+                //if( it->first == "NuScore"    ) fData->nu_nuscore     = it->second;
+                if( it->first == "NuScore"    ) fData->nu_nuscore.push_back(it->second);
+                //if( it->first == "SliceIndex" ) fData->nu_sliceindex  = it->second;
               }
             }
           }
         } // if PFP metadata exists!
-    
+
+        // Get vertex info
+        double xyz[3] = {}; 
+        auto vtx = pfp_pxy.get<recob::Vertex>();
+        if (vtx.size() == 1)
+        {
+          // save vertex to array
+          vtx.at(0)->XYZ(xyz);
+          auto nuvtx = TVector3(xyz[0], xyz[1], xyz[2]);
+          //fData->nu_reco_vtx_x = nuvtx.X();
+          //fData->nu_reco_vtx_y = nuvtx.Y();
+          //fData->nu_reco_vtx_z = nuvtx.Z();
+          float _reco_nu_vtx_sce[3];
+          searchingfornues::ApplySCECorrectionXYZ(nuvtx.X(),nuvtx.Y(),nuvtx.Z(), _reco_nu_vtx_sce);
+          fData->nu_reco_vtx_x = _reco_nu_vtx_sce[0];
+          fData->nu_reco_vtx_y = _reco_nu_vtx_sce[1];
+          fData->nu_reco_vtx_z = _reco_nu_vtx_sce[2];
+          //std::cout<<"Vertex:  "<<nuvtx.X()<<"  "<<nuvtx.Y()<<"  "<<nuvtx.Z()<<"\n";
+        }
+        else
+        {
+          std::cout << "ERROR. Found neutrino PFP w/ != 1 associated vertices..." << std::endl;
+        }
+
+        // collect PFParticle hierarchy originating from this neutrino candidate
+        std::vector<ProxyPfpElem_t> slice_pfp_v;
+        AddDaughters(pfp_pxy, pfp_proxy, slice_pfp_v);
+        //std::cout << "This slice has " << slice_pfp_v.size() << " daughter PFParticles" << std::endl;
+      
+        // create list of tracks and showers associated to this slice
+        //std::vector<art::Ptr<recob::Track>> sliceTracks;
+        //std::vector<art::Ptr<recob::Shower>> sliceShowers;
+        std::vector<float>  trkscore_v;
+        std::vector<int>    trkid_v;
+        std::vector<float>  shwrscore_v;
+
+        for (auto pfp : slice_pfp_v)
+        {
+          auto const &ass_trk_v = pfp.get<recob::Track>();
+          auto const &ass_shr_v = pfp.get<recob::Shower>();
+          float score = searchingfornues::GetTrackShowerScore(pfp);
+          if (ass_trk_v.size() == 1) {
+            trkid_v   .push_back(ass_trk_v.at(0)->ID());
+            trkscore_v.push_back(score);
+          }
+          if (ass_shr_v.size() == 1) {
+            shwrscore_v.push_back(score);
+          }
+        } // for all PFParticles in the slice
+     
+        //std::cout<<"  - "<<trkscore_v.size()<<" tracks\n";
+        //std::cout<<"  - "<<shwrscore_v.size()<<" showers\n";
+        
+        for(size_t itrk = 0; itrk < trkscore_v.size(); itrk++){
+          fData->nu_trk_id    .push_back(trkid_v[itrk]);
+          fData->nu_trk_score .push_back(trkscore_v[itrk]);
+        }
+        for(size_t ishwr = 0; ishwr < shwrscore_v.size(); ishwr++){
+          fData->nu_shwr_score .push_back(shwrscore_v[ishwr]);
+        }
+
+        
+        // run analysis on this slice
+        for (size_t i = 0; i < _analysisToolsVec.size(); i++) {
+          bool fIsData = !fEvtIsMC;
+          _analysisToolsVec[i]->analyzeSlice(evt, slice_pfp_v, fIsData, true);
+        }
+
+        //float* fData->selTree->GetBranch( 
+  
+        /*
+        float* bdtscore = (float*) _tree->GetBranch(fBDT_branch.c_str())->GetAddress();
+        std::cout << "bdtscore=" << *bdtscore << std::endl;
+        keepEvent = keepEvent && ( (*bdtscore)<fBDT_cut ); 
+        */
 
       }//if PDG of neutrino
     }//end loop over PFPs
@@ -1434,7 +1654,7 @@ void BlipAna::analyze(const art::Event& evt)
     std::vector<blipobj::ParticleInfo>& pinfo = fBlipAlg->pinfo;
     
     // Loop through the MCParticles
-    //if( fDebugMode ) std::cout<<"\nLooping over G4 MCParticles: \n";
+    if( fDebugMode ) std::cout<<"\nLooping over "<<plist.size()<<" G4 MCParticles: \n";
     int printed = 0;
     for(size_t i = 0; i<plist.size(); i++){
       auto& pPart = plist[i];
@@ -1442,23 +1662,53 @@ void BlipAna::analyze(const art::Event& evt)
       total_depEnergy       += pinfo[i].depEnergy;
       total_depElectrons    += pinfo[i].depElectrons;
       
+      // is this a special particle?
+      // primary, pion, muon, proton, neutron
+      /*
+      bool isSelect = false;
+      int absPDG = abs(pPart->PdgCode());
+      if( pinfo[i].isPrimary )                isSelect = true; // primary particles
+      if( absPDG == 13 || absPDG == 15 )      isSelect = true; // muon, tau
+      if( absPDG == 2212 || absPDG == 2112 )  isSelect = true; // proton or neutron
+      if( absPDG == 111 || absPDG == 211 )    isSelect = true; // pi0 or pi+/-
+
+      if( isSelect && fData->nparts_sel < kMaxG4 ) {
+        int ip = fData->nparts_sel;
+        fData->part_sel_g4id[ip]        = pPart->TrackId();
+        fData->part_sel_index[ip]       = i;
+        fData->part_sel_Px[ip]          = pinfo[i].Px;
+        fData->part_sel_Py[ip]          = pinfo[i].Py;
+        fData->part_sel_Pz[ip]          = pinfo[i].Pz;
+        fData->part_sel_startPointx[ip] = pPart->Vx();
+        fData->part_sel_startPointy[ip] = pPart->Vy();
+        fData->part_sel_startPointz[ip] = pPart->Vz();
+        fData->part_sel_endPointx[ip]   = pPart->EndPosition()[0];
+        fData->part_sel_endPointy[ip]   = pPart->EndPosition()[1];
+        fData->part_sel_endPointz[ip]   = pPart->EndPosition()[2];
+        fData->part_sel_startT[ip]      = pinfo[i].time;
+        fData->nparts_sel++;
+      }
+      */
+
       // Save to TTree object
       if(i<kMaxG4){
         
         if( fData->savePrimaries && pinfo[i].isPrimary ) {
+          int ip = fData->nprimaries;
+          fData->primary_g4id[ip]    = pPart->TrackId();
+          fData->primary_pdg[ip]     = pPart->PdgCode();
+          fData->primary_Px[ip]      = pinfo[i].Px;
+          fData->primary_Py[ip]      = pinfo[i].Py;
+          fData->primary_Pz[ip]      = pinfo[i].Pz;
+          fData->primary_KE[ip]      = pinfo[i].KE;
+          fData->primary_x0[ip]      = pPart->Vx();
+          fData->primary_y0[ip]      = pPart->Vy();
+          fData->primary_z0[ip]      = pPart->Vz();
+          fData->primary_T0[ip]      = pinfo[i].time;
           fData->nprimaries++;
-          fData->primary_trackID[i] = pPart->TrackId();
-          fData->primary_pdg[i]     = pPart->PdgCode();
-          fData->primary_Px[i]      = pinfo[i].Px;
-          fData->primary_Py[i]      = pinfo[i].Py;
-          fData->primary_Pz[i]      = pinfo[i].Pz;
-          fData->primary_x0[i]      = pPart->Vx();
-          fData->primary_y0[i]      = pPart->Vy();
-          fData->primary_z0[i]      = pPart->Vz();
-          fData->primary_T0[i]      = pinfo[i].time;
         }
 
-        fData->part_trackID[i]         = pPart->TrackId();
+        fData->part_g4id[i]            = pPart->TrackId();
         fData->part_pdg[i]             = pPart->PdgCode();
         fData->part_nDaughters[i]      = pPart->NumberDaughters();
         fData->part_mother[i]          = pPart->Mother();
@@ -1485,11 +1735,25 @@ void BlipAna::analyze(const art::Event& evt)
         fData->part_depEnergy[i]       = pinfo[i].depEnergy;
         fData->part_depElectrons[i]    = pinfo[i].depElectrons;
         fData->part_isPrimary[i]       = pinfo[i].isPrimary;
+        
+        
+        
         if( fDebugMode ) {
           if( printed < 200 && pPart->Process() != "muIoni" ) {
             PrintParticleInfo(i);
             printed++;
           }
+        }
+
+        // check containment
+        float x0 = pPart->Vx();
+        float y0 = pPart->Vy();
+        float z0 = pPart->Vz();
+        float xf = pPart->EndPosition()[0];
+        float yf = pPart->EndPosition()[1];
+        float zf = pPart->EndPosition()[2];
+        if( BlipUtils::IsPointInAV(x0,y0,z0) && BlipUtils::IsPointInAV(xf,yf,zf) ){
+          fData->part_isContained[i] = true;
         }
       }
     } // endloop over G4 particles
@@ -1505,7 +1769,7 @@ void BlipAna::analyze(const art::Event& evt)
   //std::vector<blipobj::TrueBlip>& trueblips = fBlipAlg->trueblips;
   fData->nedeps = (int)trueblips.size();
   if( trueblips.size() ) {
-    //if( fDebugMode ) std::cout<<"\nLooping over true blips:\n";
+    if( fDebugMode ) std::cout<<"\nLooping over "<<trueblips.size()<<" true blips / 'edeps':\n";
     for(auto& trueblip : trueblips ) {
       int i     = trueblip.ID;
       int ig4   = trueblip.LeadG4Index;
@@ -1519,8 +1783,7 @@ void BlipAna::analyze(const art::Event& evt)
       fData->edep_z[i]        = trueblip.Position.Z();
       fData->edep_tdrift[i]   = trueblip.DriftTime;
       fData->edep_pdg[i]      = trueblip.LeadG4PDG;
-      fData->edep_g4trkid[i]  = trueblip.LeadG4ID;
-      fData->edep_g4id[i]     = trueblip.LeadG4Index;
+      fData->edep_g4id[i]     = trueblip.LeadG4ID;
       fData->edep_g4qfrac[i]  = trueblip.G4ChargeMap[trueblip.LeadG4ID] / trueblip.DepElectrons;
       fData->edep_isPrimary[i]= (pPart->Process() == "primary");
       fData->edep_dz[i]       = fabs(pPart->EndPosition()[2]-pPart->Vz());
@@ -1815,7 +2078,7 @@ void BlipAna::analyze(const art::Event& evt)
   int   num_hits_true[kNplanes]       ={0};
   int   num_hits_pmatch[kNplanes]     ={0};
   float total_hit_charge[kNplanes]    ={0};
-  
+
   for(size_t i=0; i<hitlist.size(); i++){
     
     int     plane   = hitlist[i]->WireID().Plane;
@@ -1864,7 +2127,6 @@ void BlipAna::analyze(const art::Event& evt)
       }
 
       // Find associated EDep
-      // blah
       if( plane==2 && rms > 0 && amp > 0 ) {
         for(auto& trueblip : trueblips ) {
           if( trueblip.LeadG4ID == hinfo.g4trkid ) {
@@ -1934,33 +2196,41 @@ void BlipAna::analyze(const art::Event& evt)
 
     if( hitlist[i]->Integral() != 0 ) h_hit_sigmaint[plane] -> Fill( fabs(hitlist[i]->SigmaIntegral()/hitlist[i]->Integral()) );
     if( sumADC != 0 ) h_hit_adcdiff[plane]->Fill( (integral-sumADC)/sumADC );
-
+    
+    // ---------------------------------------------    
     // fill data to be saved to event tree
-    if( i < kMaxHits && fData->saveHitInfo ){
-      fData->hit_plane[i]     = hitlist[i]->WireID().Plane;
-      fData->hit_wire[i]      = hitlist[i]->WireID().Wire;
-      fData->hit_tpc[i]       = hitlist[i]->WireID().TPC;
-      fData->hit_channel[i]   = hitlist[i]->Channel();
-      fData->hit_peakT[i]     = hitlist[i]->PeakTime();
-      fData->hit_rms[i]       = hitlist[i]->RMS();
-      fData->hit_amp[i]	      = hitlist[i]->PeakAmplitude();
-      fData->hit_area[i]      = hitlist[i]->Integral();
-      fData->hit_sumadc[i]    = hitlist[i]->SummedADC();
-      fData->hit_mult[i]      = hitlist[i]->Multiplicity();
-      fData->hit_gof[i]       = gof;
-      fData->hit_trkid[i]     = hinfo.trkid;
-      fData->hit_time[i]      = hinfo.driftTime;
-      fData->hit_charge[i]    = hinfo.charge;
-      fData->hit_ismatch[i]   = hinfo.ismatch;
-      fData->hit_g4trkid[i]   = hinfo.g4trkid;
-      fData->hit_g4frac[i]    = hinfo.g4frac;
-      fData->hit_g4energy[i]  = hinfo.g4energy;
-      fData->hit_g4charge[i]  = hinfo.g4charge;
-      fData->hit_blipid[i]    = hinfo.blipid;
-      fData->hit_clustid[i]   = hinfo.clustid;
-    }
+    if( !fData->saveHitInfo || fData->nhits >= kMaxHits ) continue;
+    if( fData->saveHitInfo_Blips && hinfo.blipid<0  )     continue;
+    if( fData->saveHitInfo_Truth && hinfo.g4trkid<0 )     continue;
+    int ih = fData->nhits;
+    fData->nhits++;
+    fData->hit_id[ih]       = hinfo.hitid; 
+    fData->hit_plane[ih]    = hitlist[i]->WireID().Plane;
+    fData->hit_wire[ih]     = hitlist[i]->WireID().Wire;
+    fData->hit_tpc[ih]      = hitlist[i]->WireID().TPC;
+    fData->hit_channel[ih]  = hitlist[i]->Channel();
+    fData->hit_peakT[ih]    = hitlist[i]->PeakTime();
+    fData->hit_rms[ih]      = hitlist[i]->RMS();
+    fData->hit_amp[ih]	    = hitlist[i]->PeakAmplitude();
+    fData->hit_area[ih]     = hitlist[i]->Integral();
+    fData->hit_sumadc[ih]   = hitlist[i]->SummedADC();
+    fData->hit_mult[ih]     = hitlist[i]->Multiplicity();
+    fData->hit_gof[ih]      = gof;
+    fData->hit_trkid[ih]    = hinfo.trkid;
+    fData->hit_driftT[ih]   = hinfo.driftTime;
+    fData->hit_charge[ih]   = hinfo.charge;
+    fData->hit_ismatch[ih]  = hinfo.ismatch;
+    fData->hit_g4id[ih]     = hinfo.g4trkid;
+    fData->hit_g4frac[ih]   = hinfo.g4frac;
+    fData->hit_g4energy[ih] = hinfo.g4energy;
+    fData->hit_g4charge[ih] = hinfo.g4charge;
+    fData->hit_blipid[ih]   = hinfo.blipid;
+    fData->hit_clustid[ih]  = hinfo.clustid;
   
   }//endloop over hits
+
+
+
 
   // Now that we've looped all the hits, calculate some
   // plane-specific variables and fill histograms
@@ -2046,45 +2316,18 @@ void BlipAna::analyze(const art::Event& evt)
   //=============================================
   // Save hit cluster info
   //=============================================
-  fData->nclusts = (int)fBlipAlg->hitclust.size();
+  //fData->nclusts = (int)fBlipAlg->hitclust.size();
+  std::map<int,int> map_clustid_index;
   int num_clusts[kNplanes]     ={0};
   int num_clusts_pm[kNplanes]   ={0};
-  if( fDebugMode ) std::cout<<"\nLooping over clusters...\n";
+  if( fDebugMode ) std::cout<<"\nLooping over "<<fBlipAlg->hitclust.size()<<" 2D clusters...\n";
   for(size_t i=0; i < fBlipAlg->hitclust.size(); i++){
     auto const& clust = fBlipAlg->hitclust[i];
     num_clusts[clust.Plane]++;
     if( clust.isMatched ) num_clusts_pm[clust.Plane]++;
     if( !fSavePlaneInfo[clust.Plane] ) continue;
-    if( i < kMaxClusts ) {
-      fData->clust_id[i]        = clust.ID;
-      fData->clust_tpc[i]       = clust.TPC;
-      fData->clust_plane[i]     = clust.Plane;
-      fData->clust_wire[i]        = clust.CenterWire;
-      fData->clust_startwire[i]   = clust.StartWire;
-      fData->clust_endwire[i]     = clust.EndWire;
-      fData->clust_nwires[i]      = clust.NWires;
-      fData->clust_nwiresNoisy[i] = clust.NWiresNoisy;
-      fData->clust_bydeadwire[i]  = (clust.DeadWireSep==0);
-      fData->clust_nhits[i]       = clust.NHits;
-      fData->clust_pulsetrain[i] = (clust.NPulseTrainHits>0);
-      //fData->clust_time[i]      = clust.Time;
-      //fData->clust_charge[i]    = clust.Charge;
-      // Truncate precision to reduce file size after ROOT compression
-      // (we don't need to know these to the Nth decimal place)
-      fData->clust_charge[i]    = Truncate(clust.Charge,    10);
-      fData->clust_chargeErr[i] = Truncate(clust.SigmaCharge, 10);
-      fData->clust_amp[i]       = Truncate(clust.Amplitude, 0.01);
-      fData->clust_time[i]      = Truncate(clust.Time,      0.1);
-      fData->clust_timespan[i]  = Truncate(clust.Timespan,  0.01);
-      fData->clust_starttime[i] = Truncate(clust.StartTime, 0.1);
-      fData->clust_endtime[i]   = Truncate(clust.EndTime,   0.1);
-      fData->clust_ismatch[i]   = clust.isMatched;
-      fData->clust_blipid[i]    = clust.BlipID;
-      fData->clust_touchtrk[i]  = (clust.TouchTrkID >= 0 );
-      fData->clust_touchtrkid[i]= clust.TouchTrkID;
-    }
+   
     // if this clust has an associated "trueblip" ID, find it
-    // and figure out the true G4 charge, energy, etc
     int tbi = clust.EdepID;
     if( tbi >= 0 && tbi < (int)trueblips.size() ) {
       auto const& trueBlip = trueblips[tbi];
@@ -2093,45 +2336,93 @@ void BlipAna::analyze(const art::Event& evt)
         fData->part_madeClustCol[g4index]  = true;
         fData->edep_madeClustCol[tbi]      = true;
       }
-
-      fData->clust_edepid[i]   = trueBlip.ID;
-      // fill histograms of electron/alpha charge resolution,
-      // also derive the electron-to-ADC factor (this ~should~ 
-      // match up with CalAreaConstants!)
       float q_reco  = clust.Charge;
       float q_anode = trueBlip.NumElectrons;
       float q_dep   = trueBlip.DepElectrons;
-      float tdrift  = trueBlip.DriftTime;
-      int   pdg     = trueBlip.LeadG4PDG;
-
       // fill diagnostic histograms for energy deposits from electrons
-      if( clust.Plane==fCaloPlane && abs(pdg) == 11 && q_dep > 2000 ) { //&& tdrift > 100 ) {
+      // fill histograms of electron/alpha charge resolution,
+      // also derive the electron-to-ADC factor (this ~should~ 
+      // match up with CalAreaConstants!)
+      if( clust.Plane==fCaloPlane && abs(trueBlip.LeadG4PDG) == 11 && q_dep > 2000 ) { //&& tdrift > 100 ) {
         h_clust_qres_anode   ->Fill( (q_reco-q_anode)/q_anode );
         h_clust_qres_dep     ->Fill( (q_reco-q_dep)/q_dep );
         h_clust_qres_vs_q    ->Fill( q_dep/1e3, (q_reco-q_dep)/q_dep );
-        h_qratio_vs_time_sim ->Fill( tdrift, q_anode/q_dep );
+        h_qratio_vs_time_sim ->Fill( trueBlip.DriftTime, q_anode/q_dep );
       }
+    }
     
-    }
-      
-    if( fDebugMode ) {
-      PrintClusterInfo(clust);
-      if( clust.TouchTrkID >= 0 ) {
-        std::cout<<"!!! This cluster touches track "<<clust.TouchTrkID<<" (blipID "<<clust.BlipID<<")\n";
-      }
-    }
+    if( fDebugMode ) PrintClusterInfo(clust);
+ 
+    if( !fData->saveClustInfo || fData->nclusts >= kMaxHits ) continue;
+    if( fData->saveClustInfo_Blips  && clust.BlipID<0) continue;
+    if( fData->saveClustInfo_Truth  && tbi<0        ) continue;
+    int ic = fData->nclusts;
+    fData->clust_id[ic]          = clust.ID;
+    fData->clust_tpc[ic]         = clust.TPC;
+    fData->clust_plane[ic]       = clust.Plane;
+    fData->clust_wire[ic]        = clust.CenterWire;
+    fData->clust_startwire[ic]   = clust.StartWire;
+    fData->clust_endwire[ic]     = clust.EndWire;
+    fData->clust_nwires[ic]      = clust.NWires;
+    fData->clust_nwiresBad[ic]   = clust.NWiresBad+clust.NWiresNoisy;
+    fData->clust_bydeadwire[ic]  = (clust.DeadWireSep==0);
+    fData->clust_nhits[ic]       = clust.NHits;
+    fData->clust_pulsetrain[ic]  = (clust.NPulseTrainHits>0);
+    //fData->clust_time[ic]      = clust.Time;
+    //fData->clust_charge[ic]    = clust.Charge;
+    // Truncate precision to reduce file size after ROOT compression
+    // (we don't need to know these to the Nth decimal place)
+    fData->clust_charge[ic]    = Truncate(clust.Charge,    10);
+    fData->clust_chargeErr[ic] = Truncate(clust.SigmaCharge, 10);
+    fData->clust_amp[ic]       = Truncate(clust.Amplitude, 0.01);
+    fData->clust_time[ic]      = Truncate(clust.Time,      0.1);
+    fData->clust_timespan[ic]  = Truncate(clust.Timespan,  0.01);
+    fData->clust_starttime[ic] = Truncate(clust.StartTime, 0.1);
+    fData->clust_endtime[ic]   = Truncate(clust.EndTime,   0.1);
+    fData->clust_starttick[ic] = clust.StartTick;
+    fData->clust_endtick[ic]   = clust.EndTick;
+
+    fData->clust_ismatch[ic]   = clust.isMatched;
+    fData->clust_blipid[ic]    = clust.BlipID;
+    fData->clust_touchtrk[ic]  = (clust.TouchTrkID >= 0 );
+    fData->clust_touchtrkid[ic]= clust.TouchTrkID;
+    fData->clust_edepid[ic]     = clust.EdepID;
+    fData->nclusts++;
+
+    map_clustid_index[i] = ic;
+    
     
   }//endloop over 2D hit clusters
+
+  //std::cout<<"Looking at cluster ID mapping: \n";
+  //bool clustindexChanged = false;
+  //for(auto m : map_clustid_index) {
+  //  std::cout<<"old: "<<m.first<<"  -> "<<m.second<<"\n";
+  //  if( m.first != m.second ) clustindexChanged = true;
+  //}
+
+  // Re-index cluster IDs in hits
+  //for(size_t i=0; i<fData->nhits; i++){
+  //  int oldID = fData->hit_clustid[i];
+  //  fData->hit_clust[i] = -9;
+  //  if( map_clustid_index.contains(oldID) ) {
+  //    int newID = map_clustid_index[ fData->hit_clustid[i] ]
+  //    fData->hit_clustid[i] = newID;
+  //  }
+  //}
  
   for(size_t ip=0; ip<kNplanes; ip++){
     h_nclusts[ip]   ->Fill(num_clusts[ip]);
     h_nclusts_pm[ip]->Fill(num_clusts_pm[ip]);
   }//endloop over planes
 
+
+
   //====================================
   // Save blip info to tree
   //===================================
-  fData->nblips             = blips.size();
+  //fData->nblips             = blips.size();
+  std::map<int,int> map_blipid_index;
   int nblips_matched        = 0;
   int nblips_total          = 0;
   int nblips_picky          = 0;
@@ -2140,39 +2431,13 @@ void BlipAna::analyze(const art::Event& evt)
     if( i > kMaxBlips ) break;
     //auto& blp = fBlipAlg->blips[i];
     auto& blp = blips[i];
-  
-    nblips_total++;
-    fNum3DBlips++;
-    if( blp.NPlanes >= 3 ) fNum3DBlips3Plane++;
-    fData->blip_id[i]         = i;
-    fData->blip_tpc[i]        = blp.TPC;
-    fData->blip_nplanes[i]    = blp.NPlanes;
-    fData->blip_x[i]          = blp.Position.X();
-    fData->blip_y[i]          = blp.Position.Y();
-    fData->blip_z[i]          = blp.Position.Z();
-    fData->blip_sigmayz[i]    = blp.SigmaYZ;
-    fData->blip_dx[i]         = blp.dX;
-    fData->blip_dw[i]        = blp.dYZ;
-    fData->blip_size[i]       = sqrt( pow(blp.dX,2) + pow(blp.dYZ,2) );
-    fData->blip_proxtrkdist[i]= blp.ProxTrkDist;
-    fData->blip_proxtrkid[i]  = blp.ProxTrkID;
-    fData->blip_touchtrk[i]   = (blp.TouchTrkID >= 0 );
-    fData->blip_touchtrkid[i] = blp.TouchTrkID;
-    fData->blip_incylinder[i] = blp.inCylinder;
-    fData->blip_charge[i]     = blp.Charge;
-    fData->blip_energy[i]     = blp.Energy;
-    fData->blip_yzcorr[i]     = tpcCalib.YZdqdxCorrection(fCaloPlane,blp.Position.Y(),blp.Position.Z());
     
     // Fill cluster charge 2D histograms
     h_blip_charge   ->Fill(blp.Charge);
     h_blip_charge_YU->Fill( 0.001*blp.clusters[2].Charge, 0.001*blp.clusters[0].Charge );
     h_blip_charge_YV->Fill( 0.001*blp.clusters[2].Charge, 0.001*blp.clusters[1].Charge );
     h_blip_charge_UV->Fill( 0.001*blp.clusters[0].Charge, 0.001*blp.clusters[1].Charge );
-    for(size_t ipl = 0; ipl<kNplanes; ipl++){
-      if( blp.clusters[ipl].NHits <= 0 ) continue;
-      fData->blip_clustid[ipl][i] = blp.clusters[ipl].ID;
-    }
-
+    
     // Select picky (high-quality) blips:
     if(blp.NPlanes == 3 && blp.SigmaYZ < 1.) {
       nblips_picky++;
@@ -2183,26 +2448,60 @@ void BlipAna::analyze(const art::Event& evt)
       h_blip_charge_YV_picky->Fill( 0.001*blp.clusters[2].Charge, 0.001*blp.clusters[1].Charge );
       h_blip_charge_UV_picky->Fill( 0.001*blp.clusters[0].Charge, 0.001*blp.clusters[1].Charge );
     }
-
+    
+    nblips_total++;
+    fNum3DBlips++;
+    if( blp.NPlanes >= 3 ) fNum3DBlips3Plane++;
     h_blip_zy     ->Fill(blp.Position.Z(), blp.Position.Y());
     h_blip_nplanes->Fill(blp.NPlanes);
-   
-    // -----------------------------------------------
-    // save the clustIDs and true energy deposits to the blip
-    // (use the association between clust <--> edep)
-    // -----------------------------------------------
-    if( blp.truth.ID >= 0 && blp.truth.Energy > 0 ) {
-      fData->blip_edepid[i]           = blp.truth.ID;
-      fData->blip_energyTrue[i]       = blp.truth.Energy;
-      fData->edep_blipid[blp.truth.ID]  = blp.ID;
+    
+    bool isMC = ( blp.truth.ID >= 0 && blp.truth.Energy > 0 );
+    if( isMC ) {
       fNum3DBlipsTrue++;
       nblips_matched++;
       true_blip_charge += blp.truth.NumElectrons;
-      //if( blp.truth.Energy < 2 ) true_blip_charge_2MeV += blp.truth.NumElectrons;
       h_blip_reszy->Fill( blp.Position.Z()-blp.truth.Position.Z(), blp.Position.Y()-blp.truth.Position.Y() );
       h_blip_resx->Fill( blp.Position.X()-blp.truth.Position.X() );
       h_blip_resE->Fill( blp.truth.Energy, (blp.Energy - blp.truth.Energy) / blp.truth.Energy );
     }
+    
+    if( fData->saveBlipInfo_Truth && !isMC ) continue;
+    int ib = fData->nblips;
+    fData->nblips++;
+    fData->blip_id[ib]         = i;
+    fData->blip_tpc[ib]        = blp.TPC;
+    fData->blip_nplanes[ib]    = blp.NPlanes;
+    fData->blip_x[ib]          = blp.Position.X();
+    fData->blip_y[ib]          = blp.Position.Y();
+    fData->blip_z[ib]          = blp.Position.Z();
+    fData->blip_sigmayz[ib]    = blp.SigmaYZ;
+    fData->blip_dx[ib]         = blp.dX;
+    fData->blip_dw[ib]        = blp.dYZ;
+    fData->blip_size[ib]       = sqrt( pow(blp.dX,2) + pow(blp.dYZ,2) );
+    fData->blip_proxtrkdist[ib]= blp.ProxTrkDist;
+    fData->blip_proxtrkid[ib]  = blp.ProxTrkID;
+    fData->blip_touchtrk[ib]   = (blp.TouchTrkID >= 0 );
+    fData->blip_touchtrkid[ib] = blp.TouchTrkID;
+    fData->blip_incylinder[ib] = blp.inCylinder;
+    fData->blip_charge[ib]     = blp.Charge;
+    fData->blip_energy[ib]     = blp.Energy;
+    fData->blip_yzcorr[ib]     = tpcCalib.YZdqdxCorrection(fCaloPlane,blp.Position.Y(),blp.Position.Z());
+    for(size_t ipl = 0; ipl<kNplanes; ipl++){
+      if( blp.clusters[ipl].NHits <= 0 ) continue;
+      int cl = blp.clusters[ipl].ID;
+      //if( map_clustid_index.contains(cl) ) {
+      //  cl = map_clustid_index[cl];
+        fData->blip_clustid[ipl][ib] = cl;
+      //}
+    }
+    if( isMC ) {
+      fData->blip_g4id[ib]             = blp.truth.LeadG4ID;
+      fData->blip_edepid[ib]           = blp.truth.ID;
+      fData->blip_energyTrue[ib]       = blp.truth.Energy;
+      fData->edep_blipid[blp.truth.ID]  = blp.ID;
+    }
+
+    map_blipid_index[i] = ib;
  
 
   }//endloop over 3D blips
@@ -2210,12 +2509,12 @@ void BlipAna::analyze(const art::Event& evt)
   // Fill some more histograms...
   h_nblips->Fill(nblips_total);
   h_nblips_picky->Fill(nblips_picky);
-  if( fIsMC ) {
-    h_nblips_tm->Fill(nblips_matched);
-    if( total_numElectrons        ) h_blip_qcomp      ->Fill(true_blip_charge      / total_numElectrons     );
-  }
+  if( fEvtIsMC ) h_nblips_tm->Fill(nblips_matched);
+  if( fEvtIsMC && total_numElectrons ) h_blip_qcomp->Fill(true_blip_charge/total_numElectrons);
+ 
   
   if( fDebugMode ) {
+    std::cout<<"\nLooping over "<<blips.size()<<" 3D blips:\n";
     for(auto const& b : blips ) PrintBlipInfo(b);
   }
  
@@ -2223,7 +2522,9 @@ void BlipAna::analyze(const art::Event& evt)
   //====================================
   // Fill TTree
   //====================================
-  fData->evtTree->Fill();
+  fData->FillTrees();
+  //fData->evtTree->Fill();
+  //if( fData->saveNuSelTree ) fData->selTree->Fill();
 
 }
 
@@ -2291,7 +2592,7 @@ void BlipAna::endJob(){
   printf("                 picky        : %.3f\n",      fNum3DBlipsPicky/nEvents);
   printf("                 picky frac   : %5.3f\n",     fNum3DBlipsPicky/float(fNum3DBlips));
   
-  if(fIsMC){
+  if(fEvtIsMC){
   printf("  MC-matched blips per evt    : %.3f\n",       fNum3DBlipsTrue/nEvents);
   if( h_blip_qcomp->GetMean() > 0 ) 
   printf("  Charge completeness, total  : %.4f +/- %.4f\n", h_blip_qcomp->GetMean(), h_blip_qcomp->GetStdDev()/sqrt(fNumEvents));
@@ -2305,7 +2606,7 @@ void BlipAna::endJob(){
   printf("   * total hits/evt           : %.2f\n",fNumHits[i]/(float)fNumEvents);
   printf("   * untracked hits/evt       : %.2f (%.2f plane-matched)\n",fNumHitsUntracked[i]/(float)fNumEvents, fNumHitsMatched[i]/(float)fNumEvents);
   //printf("   * plane-matched hits/evt   : %.2f\n",fNumHitsMatched[i]/(float)fNumEvents);
-  if(fIsMC) {
+  if(fEvtIsMC) {
   printf("   * true-matched hits/evt    : %.2f (%.2f plane-matched)\n",fNumHitsTrue[i]/(float)fNumEvents, fNumHitsMatchedTrue[i]/(float)fNumEvents);
   if( h_chargecomp[i]->GetMean() > 0 ) 
   printf("   * charge completeness      : %.4f\n",h_chargecomp[i]->GetMean());
@@ -2332,6 +2633,43 @@ void BlipAna::endJob(){
 
 }
 
+//#################################################
+// Neutrino selection functions
+//#################################################
+void BlipAna::BuildPFPMap(const ProxyPfpColl_t &pfp_pxy_col)
+{
+  _pfpmap.clear();
+  unsigned int p = 0;
+  for (const auto &pfp_pxy : pfp_pxy_col)
+  { _pfpmap[pfp_pxy->Self()] = p; p++; }
+  return;
+} // BuildPFPMap
+
+void BlipAna::AddDaughters(const ProxyPfpElem_t &pfp_pxy,
+                           const ProxyPfpColl_t &pfp_pxy_col,
+                           std::vector<ProxyPfpElem_t> &slice_v)
+{
+  auto daughters = pfp_pxy->Daughters();
+  slice_v.push_back(pfp_pxy);
+  //std::cout << "\t PFP w/ PdgCode " << pfp_pxy->PdgCode() << " has " << daughters.size() << " daughters" << std::endl;
+  for (auto const &daughterid : daughters){
+    if (_pfpmap.find(daughterid) == _pfpmap.end())
+    {
+      //std::cout << "Did not find DAUGHTERID in map! error" << std::endl;
+      continue;
+    }
+
+    // const art::Ptr<recob::PFParticle> pfp_pxy(pfp_pxy_col, _pfpmap.at(daughterid) );
+    auto pfp_pxy2 = pfp_pxy_col.begin();
+    for (size_t j = 0; j < _pfpmap.at(daughterid); ++j)
+      ++pfp_pxy2;
+    // const T& pfp_pxy2 = (pfp_pxy_col.begin()+_pfpmap.at(daughterid));
+    AddDaughters(*pfp_pxy2, pfp_pxy_col, slice_v);
+  } // for all daughters
+
+  return;
+} // AddDaughters
+
 
 
 
@@ -2342,7 +2680,7 @@ void BlipAna::endJob(){
 void BlipAna::PrintParticleInfo(size_t i){
   printf("  %5i  trkID: %-6i PDG: %-10i XYZ= %7.1f %7.1f %7.1f, dL=%7.1f, Npts=%4i, KE0=%8.3f, Edep=%8.3f, T=%10.2f, moth=%5i, %12s, ND=%i\n",
    (int)i,
-   fData->part_trackID[i],
+   fData->part_g4id[i],
    fData->part_pdg[i],
    fData->part_startPointx[i],
    fData->part_startPointy[i],

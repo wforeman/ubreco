@@ -10,6 +10,7 @@ typedef std::vector<float>      vfloat_t;
 typedef std::set<int>           si_t;
 typedef std::map<int,float>     mif_t;
 
+
 const int kNplanes  = 3;  
 
 namespace blipobj {
@@ -120,6 +121,8 @@ namespace blipobj {
     float   EndHitTime      = -999;
     float   StartTime       = -999;
     float   EndTime         = -999;
+    float   StartTick       = -999;
+    float   EndTick         = -999;
     float   Timespan        = -999;
     int     StartWire       = -999;
     int     EndWire         = -999;

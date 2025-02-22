@@ -402,7 +402,8 @@ namespace blip {
     //====================================================
     // Update map of bad channels for this event
     //====================================================
-    if( fVetoBadChannels ) {
+
+    //if( fVetoBadChannels ) {
       fBadChanMaskPerEvt = fBadChanMask;
       if( fBadChanProducer != "" ) { 
         std::vector<int> badChans;
@@ -415,7 +416,7 @@ namespace blip {
           h_chan_bad->Fill(ch);
         }
       }
-    }
+    //}
     
     
     if( !ranBlipTruth ) RunBlipTruth(evt);

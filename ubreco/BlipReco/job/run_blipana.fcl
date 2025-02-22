@@ -3,7 +3,7 @@
 #include "services_microboone.fcl"
 #include "calorimetry_microboone.fcl"
 #include "time_memory_tracker_microboone.fcl"
-#include "blipreco_configs.fcl"
+#include "blipana_configs.fcl"
 
 process_name: BlipAna
 
@@ -17,6 +17,8 @@ services:
   TimeTracker:              @local::microboone_time_tracker
                             @table::microboone_services_reco
 }
+
+services.TPCEnergyCalibService.TPCEnergyCalibProvider: @local::microboone_tpcenergycalib_provider_data
 
 # Enable BackTracker to work on overlay MC
 #services.BackTrackerService: @local::microboone_backtrackerservice

@@ -1,0 +1,10 @@
+#include "run_blipana.fcl"
+
+physics.analyzers.blipana.SaveHitInfo:          true
+physics.analyzers.blipana.SaveHitInfo_Blips:    true # only save hits that were reco'd into blips
+physics.analyzers.blipana.SaveHitInfo_Truth:    true # only save truth-matched hits
+physics.analyzers.blipana.SaveClustInfo:        true
+physics.analyzers.blipana.SaveClustInfo_Blips:  true
+physics.analyzers.blipana.SaveClustInfo_Truth:  true
+physics.analyzers.blipana.SaveBlipInfo_Truth:  true
+

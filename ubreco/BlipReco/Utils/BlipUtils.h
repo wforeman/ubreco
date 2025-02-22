@@ -58,7 +58,7 @@ namespace BlipUtils {
   bool      DoHitClustsMatch(blipobj::HitClust const&, blipobj::HitClust const&,float);
   blipobj::HitClust  MakeHitClust(std::vector<blipobj::HitInfo> const&);
   blipobj::Blip      MakeBlip(std::vector<blipobj::HitClust> const&);
-  
+  void      GetBlipDirection(blipobj::Blip const&);  
 
   //###################################################
   // General functions 
@@ -73,8 +73,8 @@ namespace BlipUtils {
   double  DistToLine(TVector3&, TVector3&, TVector3&);
   double  DistToLine2D(TVector2&, TVector2&, TVector2&);
   void    GetGeoBoundaries(double&,double&,double&,double&,double&,double&);
-  bool    IsPointInAV(float,float,float);
-  bool    IsPointInAV(TVector3&);
+  bool    IsPointInAV(float,float,float,float margin=0);
+  bool    IsPointInAV(TVector3&,float margin=0);
   bool    IsPointAtBnd(float,float,float);
   bool    IsPointAtBnd(TVector3&);
   void    NormalizeHist(TH1D*);

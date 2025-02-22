@@ -90,6 +90,10 @@ BlipReco3D::BlipReco3D(fhicl::ParameterSet const & pset)
   produces< std::vector<  recob::SpacePoint > >();
   produces< art::Assns <  recob::Hit, recob::SpacePoint> >();
   
+  // produce cluster and 'hit <--> cluster' associations
+  //produces< std::vector<  recob::Cluster > >();
+  //produces< art::Assns <  recob::Hit, recob::Cluster> >();
+  
   // produce blips and 'hit <--> blip' associations
   produces< std::vector<  blipobj::Blip > >();
   produces< art::Assns <  recob::Hit, blipobj::Blip> >();
@@ -114,6 +118,9 @@ void BlipReco3D::produce(art::Event & evt)
   //============================================
   std::unique_ptr< std::vector< recob::SpacePoint> > SpacePoint_v(new std::vector<recob::SpacePoint>);
   std::unique_ptr< art::Assns <recob::Hit, recob::SpacePoint> >  assn_hit_sps_v(new art::Assns<recob::Hit,recob::SpacePoint> );
+  
+  //std::unique_ptr< std::vector< recob::Cluster> > Cluster_v(new std::vector<recob::Cluster>);
+  //std::unique_ptr< art::Assns <recob::Hit, recob::Cluster> >  assn_hit_clust_v(new art::Assns<recob::Hit,recob::Cluster> );
 
   std::unique_ptr< std::vector< blipobj::Blip > > Blip_v(new std::vector<blipobj::Blip>);
   std::unique_ptr< art::Assns <recob::Hit, blipobj::Blip> >  assn_hit_blip_v(new art::Assns<recob::Hit,blipobj::Blip> );
@@ -178,9 +185,24 @@ void BlipReco3D::produce(art::Event & evt)
     
     recob::SpacePoint newpt(xyz,xyz_err,chiSquare);
     SpacePoint_v->emplace_back(newpt);
-    
+  
     // Hit associations 
     for(auto& hc : b.clusters ) {
+
+    /*
+    // Cluster
+    // Cluster (float start_wire, float sigma_start_wire, float start_tick, float sigma_start_tick, float start_charge, float start_angle, float start_opening, float end_wire, float sigma_end_wire, float end_tick, float sigma_end_tick, float end_charge, float end_angle, float end_opening, float integral, float integral_stddev, float summedADC, float summedADC_stddev, unsigned int n_hits, float multiple_hit_density, float width, ID_t ID, geo::View_t view, geo::PlaneID const &plane, SentryArgument_t sentry=Sentry)
+
+      float wire1 = hc.StartWire;
+      float wire2 = hc.EndWire;
+      float tick1 = hc.StartTick;
+      float tick2 = hc.EndTick;
+      recob::Cluster newclust( wire1, 0, tick1, 0, hc.Charge, 0 
+    */
+      
+
+
+      // hit associations
       for(auto& ihit : hc.HitIDs ) {
         auto& hitptr = hitlist[ihit];
         util::CreateAssn(*this, evt, *SpacePoint_v, hitptr, *assn_hit_sps_v);

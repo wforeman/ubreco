@@ -1,0 +1,38 @@
+#include "blipreco_configs.fcl"
+#include "neutrinoselection.fcl"
+
+# ===============================================
+# Main BlipAna settings (TTree + diagnostic hists)
+microboone_blipana:
+{
+  module_type:          "BlipAna"
+  BlipAlg:              @local::microboone_blipalg
+  SaveTruthInfo:        true
+  SaveTrueParticles:    true
+  SavePrimaries:        false
+  SaveTrkInfo:          true
+  SaveHitInfo:          true # temp
+  SaveHitInfo_Truth:    true # temp
+  SaveHitInfo_Blips:    true # temp
+  SaveClustInfo:        true
+  #DebugMode:           true #// enables many more debug statements
+
+  SaveNuSelectionTree: false
+  NuAnalysisTools: {
+    default: @local::DefaultAnalysisTool
+  }
+
+}
+
+microboone_blipana_data:                    @local::microboone_blipana
+microboone_blipana_data.BlipAlg.CaloAlg:    @local::microboone_calo_mcc9_data
+microboone_blipana_data.SaveTruthInfo:       false
+microboone_blipana_data.SaveClustInfo_Truth: false
+microboone_blipana_data.SaveHitInfo_Truth:   false
+
+microboone_blipana_fullmc:                          @local::microboone_blipana
+microboone_blipana_fullmc.BlipAlg.CaloAlg:          @local::microboone_calo_mcc9_mc
+microboone_blipana_fullmc.VetoBadChannels:          false
+#microboone_blipana_fullmc.BlipAlg.SimGainFactor:    1.0
+#microboone_blipana_fullmc.SaveHitInfo:      true
+

@@ -65,10 +65,13 @@ namespace BlipUtils {
     // Energy/charge deposited by this particle, found using SimEnergyDeposits 
     pinfo.depEnergy     = 0;
     pinfo.depElectrons  = 0;
-    for(auto& sed : sedvec ) {
-      if( sed->TrackID() == part.TrackId() ) {
-        pinfo.depEnergy     += sed->Energy();
-        pinfo.depElectrons  += sed->NumElectrons();
+    int pdg = part.PdgCode();
+    if( pdg != 2112 && pdg != 22 ){
+      for(auto& sed : sedvec ) {
+        if( sed->TrackID() == part.TrackId() ) {
+          pinfo.depEnergy     += sed->Energy();
+          pinfo.depElectrons  += sed->NumElectrons();
+        }
       }
     }
     
@@ -246,6 +249,8 @@ namespace BlipUtils {
       hc.NPulseTrainHits  = 0;
       float startTime     = 9e9;
       float endTime       = -9e9;
+      float   startTick     = 9e9;
+      float   endTick       = -9e9;
       float weightedTime  = 0;
       float weightedGOF   = 0;
       //float weightedRatio = 0;
@@ -273,6 +278,8 @@ namespace BlipUtils {
         weightedTime  += q*hitinfo.driftTime;
         startTime     = std::min(startTime, hitinfo.driftTime-hitinfo.rms);
         endTime       = std::max(endTime,   hitinfo.driftTime+hitinfo.rms);
+        startTick     = std::min(startTick, hitinfo.peakTime-hitinfo.rms);
+        endTick       = std::max(endTick,   hitinfo.peakTime+hitinfo.rms);
         tvec          .push_back(hitinfo.driftTime);
         qvec          .push_back(q);
         dqvec         .push_back(dq);
@@ -304,6 +311,8 @@ namespace BlipUtils {
       hc.EndWire    = *hc.Wires.rbegin();
       hc.StartTime  = startTime;
       hc.EndTime    = endTime;
+      hc.StartTick  = startTick;
+      hc.EndTick    = endTick;
       hc.Timespan   = hc.EndTime - hc.StartTime;
       hc.Time       = weightedTime / hc.Charge;
 
@@ -448,6 +457,13 @@ namespace BlipUtils {
     // OK, we made it! Flag as "valid" and ship it out.
     newblip.isValid = true;
     return newblip;
+    
+  }
+
+  //====================================================================
+  // Break the blip into individual spacepoints if possible (need multiple
+  // hits/wires on at least 1 plane)
+  void GetBlipDirection( blipobj::Blip const &blip ){
     
   }
 
@@ -685,11 +701,17 @@ namespace BlipUtils {
   }
 
   //===========================================================================
-  bool IsPointInAV(float x, float y, float z){
+  bool IsPointInAV(float x, float y, float z, float margin){
     
     // Get geo boundaries
     double xmin, xmax, ymin, ymax, zmin, zmax;
     GetGeoBoundaries(xmin,xmax,ymin,ymax,zmin,zmax);
+    xmin += margin;
+    xmax -= margin;
+    ymin += margin;
+    ymax -= margin;
+    zmin += margin;
+    zmax -= margin;
       
     if(     x >= xmin && x <= xmax
         &&  y >= ymin && y <= ymax
@@ -701,8 +723,8 @@ namespace BlipUtils {
     
   }
   
-  bool IsPointInAV(TVector3& v){
-    return IsPointInAV(v.X(), v.Y(), v.Z());
+  bool IsPointInAV(TVector3& v, float margin){
+    return IsPointInAV(v.X(), v.Y(), v.Z(), margin);
   }
   
   
