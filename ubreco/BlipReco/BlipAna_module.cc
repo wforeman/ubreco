@@ -332,12 +332,12 @@ class BlipAnaTreeDataStruct
   int   blip_clustindex[kNplanes][kMaxBlips]; // cluster index per plane
   
   // --- Reconstructed neutrino slice information (Pandora) --
-  bool  nu_isNeutrino;            // neutrino slice identified by Pandora
-  vfloat_t nu_nuscore;               // neutrino score
-  int   nu_pfp_pdg;               // PDG particle best matching with reco slice
-  float nu_reco_vtx_x;             // reconstructed vertex X [cm]
-  float nu_reco_vtx_y;             // reconstructed vertex Y [cm]
-  float nu_reco_vtx_z;             // reconstructed vertex Z [cm]
+  bool      nu_isNeutrino;            // neutrino slice identified by Pandora
+  vfloat_t  nu_nuscore;               // neutrino score
+  int       nu_pfp_pdg;               // PDG particle best matching with reco slice
+  float     nu_reco_vtx_x;            // reconstructed vertex X [cm]
+  float     nu_reco_vtx_y;            // reconstructed vertex Y [cm]
+  float     nu_reco_vtx_z;            // reconstructed vertex Z [cm]
   vint_t    nu_trk_id;        // trackIDs for tracks in this PFP
   vfloat_t  nu_trk_score;     // track scores for tracks in this PFP
   vfloat_t  nu_shwr_score;    // shower scores in this PFP
@@ -660,6 +660,7 @@ class BlipAnaTreeDataStruct
     }
 
     evtTree->Branch("nblips",&nblips,"nblips/I");
+    evtTree->Branch("blip_id",&blip_id,"blip_id/I");
     evtTree->Branch("blip_nplanes",blip_nplanes,"blip_nplanes[nblips]/I");
     evtTree->Branch("blip_x",blip_x,"blip_x[nblips]/F");
     evtTree->Branch("blip_y",blip_y,"blip_y[nblips]/F");
@@ -2351,7 +2352,11 @@ void BlipAna::analyze(const art::Event& evt)
       }
     }
     
-    if( fDebugMode ) PrintClusterInfo(clust);
+    if( fDebugMode ) {
+      PrintClusterInfo(clust);
+      //std::cout<<"Printing hit info for this cluster...\n";
+      //for(auto hi : clust.HitIDs ) PrintHitInfo(hitinfo[hi]);
+    }
  
     if( !fData->saveClustInfo || fData->nclusts >= kMaxHits ) continue;
     if( fData->saveClustInfo_Blips  && clust.BlipID<0) continue;
@@ -2712,12 +2717,14 @@ void BlipAna::PrintTrueBlipInfo(const blipobj::TrueBlip& tb){
 }
 
 void BlipAna::PrintHitInfo(const blipobj::HitInfo& hi){
-  printf("  hitID: %4i, TPC: %i, plane: %i, driftTicks: %7.2f, leadWire: %3i, G4ID: %4i, recoTrack: %4i\n",
+  printf("  hitID: %4i, TPC: %i, plane: %i, leadwire: %4i, amp: %7.2f, peakT: %7.2f, RMS: %7.2f, G4ID: %6i, recoTrack: %4i\n",
     hi.hitid,
     hi.tpc,
     hi.plane,
-    hi.driftTime,
     hi.wire,
+    hi.amp,
+    hi.peakTime,
+    hi.rms,
     hi.g4trkid,
     hi.trkid
   );
@@ -2728,8 +2735,8 @@ void BlipAna::PrintClusterInfo(const blipobj::HitClust& hc){
     hc.ID,
     hc.TPC,
     hc.Plane,
-    hc.StartTime,
-    hc.EndTime,
+    hc.StartTick,
+    hc.EndTick,
     hc.Timespan,
     hc.CenterWire,
     hc.NWires,

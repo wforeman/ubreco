@@ -1,4 +1,3 @@
 #include "run_blipana.fcl"
-
 physics.analyzers.blipana.SaveClustInfo: false
 

@@ -42,6 +42,7 @@ namespace blip {
     printf("******************************************\n");
     printf("Initializing BlipRecoAlg...\n");
     printf("  - Efield: %.4f kV/cm\n",detProp->Efield());
+    printf("  - Temperature: %.4f K\n",detProp->Temperature());
     printf("  - Drift velocity: %.4f\n",detProp->DriftVelocity(detProp->Efield(),detProp->Temperature()));
     printf("  - using dE/dx: %.2f MeV/cm\n",fCalodEdx);
     printf("  - equiv. recomb: %.4f\n",fNominalRecombFactor);
@@ -855,7 +856,7 @@ namespace blip {
             // skip hits outside overall cluster wire range
             int w1 = hitinfo[hj].wire - fHitClustWireRange;
             int w2 = hitinfo[hj].wire + fHitClustWireRange;
-            if( w2 < startWire    || w1 > endWire ) continue;
+            if( w2 < startWire  || w1 > endWire ) continue;
             
             // check for proximity with every other hit added
             // to this cluster so far
@@ -1206,7 +1207,7 @@ namespace blip {
             blips.push_back(newBlip);
             for(auto& hc : hcGroup ) {
               hitclust[hc.ID].BlipID = newBlip.ID;
-              for( auto& h : hc.HitIDs ) hitinfo[h].blipid = newBlip.ID;
+              for( auto h : hc.HitIDs ) hitinfo[h].blipid = newBlip.ID;
             }
 
   
@@ -1319,15 +1320,21 @@ namespace blip {
       // Save the true blip into the object;
       // each cluster must match to the same energy dep
       // ================================================
-      std::set<int> set_edepids;
-      bool badmatch = false;
+      std::map<int,int> count_edepids;
       for(auto& hc : blip.clusters ) {
-        if( !hc.isValid ) continue; 
-        if( hc.EdepID < 0 ) break;
-        set_edepids.insert( hc.EdepID );
+        if( !hc.isValid   ) continue; 
+        if( hc.EdepID < 0 ) continue;
+        count_edepids[hc.EdepID]++;
       }
-      if( !badmatch && set_edepids.size() == 1 ) 
-        blip.truth = trueblips[*set_edepids.begin()];
+      // must be at least 2 clusters with matching edepids 
+      // in order for this to be considered a truth-matched blip
+      int bestcount = 1;
+      for(auto ei : count_edepids){
+        if( ei.second > bestcount ) {
+          bestcount = ei.second;
+          blip.truth = trueblips[ei.first];
+        }
+      }
     
     }//endloop over blip vector
 
