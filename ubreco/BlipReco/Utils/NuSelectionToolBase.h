@@ -33,6 +33,15 @@ namespace selection {
   using ProxyPfpElem_t = nuselection::ProxyPfpElem_t;
   using ProxyClusColl_t = nuselection::ProxyClusColl_t;
   using ProxyClusElem_t = nuselection::ProxyClusElem_t;
+  
+  // a map linking the PFP Self() attribute used for hierarchy building to the PFP index in the event record
+  std::map<unsigned int, unsigned int> _pfpmap;
+  
+  void BuildPFPMap(const ProxyPfpColl_t &pfp_pxy_col);
+  void AddDaughters(const ProxyPfpElem_t &pfp_pxy,
+                    const ProxyPfpColl_t &pfp_pxy_col,
+                    std::vector<ProxyPfpElem_t> &slice_v);
+
 
 class SelectionToolBase {
 
@@ -83,6 +92,42 @@ public:
 
 
 };
+
+
+
+void BuildPFPMap(const ProxyPfpColl_t &pfp_pxy_col)
+{
+  _pfpmap.clear();
+  unsigned int p = 0;
+  for (const auto &pfp_pxy : pfp_pxy_col)
+  { _pfpmap[pfp_pxy->Self()] = p; p++; }
+  return;
+} // BuildPFPMap
+
+void AddDaughters(const ProxyPfpElem_t &pfp_pxy,
+                  const ProxyPfpColl_t &pfp_pxy_col,
+                  std::vector<ProxyPfpElem_t> &slice_v)
+{
+  auto daughters = pfp_pxy->Daughters();
+  slice_v.push_back(pfp_pxy);
+  //std::cout << "\t PFP w/ PdgCode " << pfp_pxy->PdgCode() << " has " << daughters.size() << " daughters" << std::endl;
+  for (auto const &daughterid : daughters){
+    if (_pfpmap.find(daughterid) == _pfpmap.end())
+    {
+      //std::cout << "Did not find DAUGHTERID in map! error" << std::endl;
+      continue;
+    }
+
+    // const art::Ptr<recob::PFParticle> pfp_pxy(pfp_pxy_col, _pfpmap.at(daughterid) );
+    auto pfp_pxy2 = pfp_pxy_col.begin();
+    for (size_t j = 0; j < _pfpmap.at(daughterid); ++j)
+      ++pfp_pxy2;
+    // const T& pfp_pxy2 = (pfp_pxy_col.begin()+_pfpmap.at(daughterid));
+    AddDaughters(*pfp_pxy2, pfp_pxy_col, slice_v);
+  } // for all daughters
+
+  return;
+} // AddDaughters
 
 } // selection namespace
 
