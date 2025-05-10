@@ -36,6 +36,9 @@
 #include "ubevt/Database/UbooneElectronLifetimeService.h"
 #include "larevt/SpaceChargeServices/SpaceChargeService.h"
 #include "ubreco/BlipReco/Alg/BlipRecoAlg.h"
+#include "ubreco/BlipReco/Utils/NuSelectionToolBase.h"
+#include "ubreco/BlipReco/Utils/NuSelectionSCECorrections.h"
+#include "ubreco/BlipReco/Utils/NuSelectionTrackShowerScoreFuncs.h"
 
 // C++ includes
 #include <cstring>
@@ -101,6 +104,15 @@ class BlipAnaReaderTreeDataStruct
   int           badchans;             // #bad chans according to wirecell
   int           longtrks;             // tracks > 5 cm
   
+  // --- MCTruth neutrino info ---
+  int   mctruth_nu_pdg;         // Neutrino PDG (if present, otherwise = 0)
+  int   mctruth_nu_ccnc;        // CC (0) or NC (1)
+  int   mctruth_nu_mode;        // interaction mode from Genie
+  float mctruth_nu_vtx_x;       // vertex X 
+  float mctruth_nu_vtx_y;       // vertex Y
+  float mctruth_nu_vtx_z;       // vertex Z
+  float mctruth_nu_KE;          // kinetic energy 
+  
   // --- 3D Blip information ---
   int   nblips;                       // number of blips in event
   int   blip_id[kMaxBlips];           // blip ID / index
@@ -127,6 +139,17 @@ class BlipAnaReaderTreeDataStruct
   int   blip_touchtrkid[kMaxBlips];   // track ID of touched track
   int   blip_clustid[kNplanes][kMaxBlips];     // cluster ID per plane
   
+  // --- Reconstructed neutrino slice information (Pandora) --
+  bool      nu_isNeutrino;            // neutrino slice identified by Pandora
+  vfloat_t  nu_nuscore;               // neutrino score
+  int       nu_pfp_pdg;               // PDG particle best matching with reco slice
+  float     nu_reco_vtx_x;            // reconstructed vertex X [cm]
+  float     nu_reco_vtx_y;            // reconstructed vertex Y [cm]
+  float     nu_reco_vtx_z;            // reconstructed vertex Z [cm]
+  vint_t    nu_trk_id;        // trackIDs for tracks in this PFP
+  vfloat_t  nu_trk_score;     // track scores for tracks in this PFP
+  vfloat_t  nu_shwr_score;    // shower scores in this PFP
+  
   // === Function for resetting data ===
   void Clear(){ 
     event                 = -999; // --- event-wide info ---
@@ -136,7 +159,23 @@ class BlipAnaReaderTreeDataStruct
     badchans              = -99;
     longtrks              = -99;
     timestamp             = -999;
-    //timestamp_hr          = -999;
+    
+    mctruth_nu_pdg        = 0;
+    mctruth_nu_ccnc       = -9;
+    mctruth_nu_mode       = -9;
+    mctruth_nu_vtx_x      = -999;
+    mctruth_nu_vtx_y      = -999;
+    mctruth_nu_vtx_z      = -999;
+    mctruth_nu_KE         = -999;
+    nu_isNeutrino         = false;
+    nu_nuscore            .clear();
+    nu_pfp_pdg            = -999;
+    nu_reco_vtx_x         = -999;
+    nu_reco_vtx_y         = -999;
+    nu_reco_vtx_z         = -999;
+    nu_trk_score          .clear();
+    nu_trk_id             .clear();
+    nu_shwr_score         .clear();  
    
     nblips                    = 0;
     FillWith(blip_id,         -9);
@@ -164,6 +203,8 @@ class BlipAnaReaderTreeDataStruct
   void MakeTree(){
     
     art::ServiceHandle<art::TFileService> tfs;
+    auto vf = "std::vector<float>";
+    auto vi = "std::vector<int>";
    
     evtTree = tfs->make<TTree>(treeName.c_str(),"analysis tree");
     evtTree->Branch("event",&event,"event/I");
@@ -174,6 +215,23 @@ class BlipAnaReaderTreeDataStruct
     evtTree->Branch("lifetime",&lifetime,"lifetime/F");
     evtTree->Branch("badchans",&badchans,"badchans/I");
     evtTree->Branch("longtrks",&longtrks,"longtrks/I");
+    evtTree->Branch("mctruth_nu_pdg",&mctruth_nu_pdg,"mctruth_nu_pdg/I");
+    evtTree->Branch("mctruth_nu_ccnc",&mctruth_nu_ccnc,"mctruth_nu_ccnc/I");
+    evtTree->Branch("mctruth_nu_mode",&mctruth_nu_mode,"mctruth_nu_mode/I");
+    evtTree->Branch("mctruth_nu_vtx_x",&mctruth_nu_vtx_x,"mctruth_nu_vtx_x/F");
+    evtTree->Branch("mctruth_nu_vtx_y",&mctruth_nu_vtx_y,"mctruth_nu_vtx_y/F");
+    evtTree->Branch("mctruth_nu_vtx_z",&mctruth_nu_vtx_z,"mctruth_nu_vtx_z/F");
+    evtTree->Branch("mctruth_nu_KE",&mctruth_nu_KE,"mctruth_nu_KE/F");
+    evtTree->Branch("nu_isNeutrino",&nu_isNeutrino,"nu_isNeutrino/O");
+    //evtTree->Branch("nu_nuscore",&nu_nuscore,"nu_nuscore/F");
+    evtTree->Branch("nu_nuscore", vf, &nu_nuscore);
+    evtTree->Branch("nu_pfp_pdg",&nu_pfp_pdg,"nu_pfp_pdg/I");
+    evtTree->Branch("nu_reco_vtx_x",&nu_reco_vtx_x,"nu_reco_vtx_x/F");
+    evtTree->Branch("nu_reco_vtx_y",&nu_reco_vtx_y,"nu_reco_vtx_y/F");
+    evtTree->Branch("nu_reco_vtx_z",&nu_reco_vtx_z,"nu_reco_vtx_z/F");
+    evtTree->Branch("nu_trk_id", vi, &nu_trk_id);
+    evtTree->Branch("nu_trk_score", vf, &nu_trk_score);
+    evtTree->Branch("nu_shwr_score", vf, &nu_shwr_score);
     evtTree->Branch("nblips",&nblips,"nblips/I");
     evtTree->Branch("blip_nplanes",blip_nplanes,"blip_nplanes[nblips]/I");
     evtTree->Branch("blip_x",blip_x,"blip_x[nblips]/F");
@@ -229,6 +287,27 @@ class BlipAnaReader : public art::EDAnalyzer
   int   fNum3DBlips         = 0;
   int   fNum3DBlips3Plane   = 0;
   int   fNum3DBlipsTrue     = 0;
+  
+  // --- Neutrino selection tools
+  using ProxyPfpColl_t = selection::ProxyPfpColl_t;
+  using ProxyPfpElem_t = selection::ProxyPfpElem_t;
+  art::InputTag fPFPproducer;
+  art::InputTag fCLSproducer; // cluster associated to PFP
+  art::InputTag fSLCproducer; // slice associated to PFP
+  art::InputTag fHITproducer; // hit associated to cluster
+  art::InputTag fSHRproducer; // shower associated to PFP
+  art::InputTag fVTXproducer; // vertex associated to PFP
+  art::InputTag fPCAproducer; // PCAxis associated to PFP
+  art::InputTag fMCTproducer;
+  art::InputTag fTRKproducer;
+
+  //void    BuildPFPMap(const ProxyPfpColl_t&);
+  //void    AddDaughters(const ProxyPfpElem_t &pfp_pxy,
+  //                  const ProxyPfpColl_t &pfp_pxy_col,
+  //                  std::vector<ProxyPfpElem_t> &slice_v);
+
+  // a map linking the PFP Self() attribute used for hierarchy building to the PFP index in the event record
+  std::map<unsigned int, unsigned int> _pfpmap;
 
   // --- Histograms ---
   TH1D*   h_nblips;
@@ -290,9 +369,20 @@ BlipAnaReader::BlipAnaReader(fhicl::ParameterSet const& pset) :
   fData = new BlipAnaReaderTreeDataStruct();
   fData ->Clear();
   fData ->MakeTree();
-
+  
   // initialize histograms
   InitializeHistograms();
+  
+  fPFPproducer = pset.get<art::InputTag>("PFPproducer","pandora");
+  fSHRproducer = pset.get<art::InputTag>("SHRproducer","shrreco3d");
+  fHITproducer = pset.get<art::InputTag>("HITproducer","pandora");
+  fVTXproducer = pset.get<art::InputTag>("VTXproducer","pandora");
+  fPCAproducer = pset.get<art::InputTag>("PCAproducer","pandora");
+  fCLSproducer = pset.get<art::InputTag>("CLSproducer","pandora");
+  fSLCproducer = pset.get<art::InputTag>("SLCproducer","pandora");
+  fMCTproducer = pset.get<art::InputTag>("MCTproducer","generator");
+  fTRKproducer = pset.get<art::InputTag>("TRKproducer","pandora");
+
     
 }
 BlipAnaReader::~BlipAnaReader(){}
@@ -330,6 +420,140 @@ void BlipAnaReader::analyze(const art::Event& evt)
   std::cout<<"\n"
   <<"=========== BlipAnaReader =========================\n"
   <<"Event "<<evt.id().event()<<" / run "<<evt.id().run()<<"; total: "<<fNumEvents<<"\n";
+  }
+  
+  //===================================
+  // Check neutrinos in MCTruth
+  // (NuanceOffset found through simb::kNuanceOffset)
+  //===================================
+  art::Handle< std::vector<simb::MCTruth> > truthHandle;
+  std::vector<art::Ptr<simb::MCTruth> > truthlist;
+  if (evt.getByLabel("generator",truthHandle))
+    art::fill_ptr_vector(truthlist, truthHandle); 
+  if( truthlist.size() > 0 ) {
+    auto& nu    = truthlist[0]->GetNeutrino();
+    auto& part  = truthlist[0]->GetParticle(0);
+    auto PDG    = fabs(part.PdgCode());
+    if ( (PDG == 12) || (PDG == 14) ) {
+      fData->mctruth_nu_pdg   = part.PdgCode();
+      fData->mctruth_nu_ccnc  = nu.CCNC();
+      fData->mctruth_nu_mode  = nu.Mode();
+      fData->mctruth_nu_vtx_x = part.EndPosition()[0];
+      fData->mctruth_nu_vtx_y = part.EndPosition()[1];
+      fData->mctruth_nu_vtx_z = part.EndPosition()[2];
+      fData->mctruth_nu_KE    =  /*GeV->MeV*/1e3 * (part.E()-part.Mass());
+    }
+  }
+  
+  
+  //=======================================================
+  // Check if the event contains neutrino information
+  // (much of this copied from ubana/searchingfornues)
+  //=======================================================
+  // -- PFPs
+  art::Handle< std::vector<recob::PFParticle> > pfpHandle;
+  std::vector<art::Ptr<recob::PFParticle> > pfplist;
+  if (evt.getByLabel(fPFPproducer,pfpHandle))
+    art::fill_ptr_vector(pfplist, pfpHandle);
+
+  // -- associated tracks/vertex
+  if( pfplist.size() ) {
+    // grab PFParticles in event
+    ProxyPfpColl_t const &pfp_proxy = proxy::getCollection<std::vector<recob::PFParticle>>(evt, fPFPproducer,
+      proxy::withAssociated<larpandoraobj::PFParticleMetadata>(fPFPproducer),
+      proxy::withAssociated<recob::Cluster>(fCLSproducer),
+      proxy::withAssociated<recob::Slice>(fSLCproducer),
+      proxy::withAssociated<recob::Track>(fTRKproducer),
+      proxy::withAssociated<recob::Vertex>(fVTXproducer),
+      proxy::withAssociated<recob::PCAxis>(fPCAproducer),
+      proxy::withAssociated<recob::Shower>(fSHRproducer),
+      proxy::withAssociated<recob::SpacePoint>(fPFPproducer));
+    selection::BuildPFPMap(pfp_proxy);
+    // loopthrough PFParticles
+    for (const ProxyPfpElem_t &pfp_pxy : pfp_proxy)
+    {
+      // get metadata for this PFP
+      const auto &pfParticleMetadataList = pfp_pxy.get<larpandoraobj::PFParticleMetadata>();
+
+      //  find neutrino candidate
+      if (pfp_pxy->IsPrimary() == false) continue;
+      auto PDG = fabs(pfp_pxy->PdgCode());
+      fData->nu_pfp_pdg=PDG;
+      if ( (PDG == 12) || (PDG == 14) )
+      {
+        //std::cout<<"Found a neutrino PFP\n";
+        if (pfParticleMetadataList.size() != 0)
+        {
+          for (unsigned int j = 0; j < pfParticleMetadataList.size(); ++j)
+          {
+            const art::Ptr<larpandoraobj::PFParticleMetadata> &pfParticleMetadata(pfParticleMetadataList.at(j));
+            auto pfParticlePropertiesMap = pfParticleMetadata->GetPropertiesMap();
+            if (!pfParticlePropertiesMap.empty())
+            {
+              for (std::map<std::string, float>::const_iterator it = pfParticlePropertiesMap.begin(); it != pfParticlePropertiesMap.end(); ++it)
+              {
+                if( it->first == "IsNeutrino" ) fData->nu_isNeutrino  = it->second;
+                if( it->first == "NuScore"    ) fData->nu_nuscore.push_back(it->second);
+              }
+            }
+          }
+        } // if PFP metadata exists!
+  
+
+        // Get vertex info
+        double xyz[3] = {};
+        auto vtx = pfp_pxy.get<recob::Vertex>();
+        if (vtx.size() == 1)
+        {
+          // save vertex to array
+          vtx.at(0)->XYZ(xyz);
+          auto nuvtx = TVector3(xyz[0], xyz[1], xyz[2]);
+          float _reco_nu_vtx_sce[3];
+          nuselection::ApplySCECorrectionXYZ(nuvtx.X(),nuvtx.Y(),nuvtx.Z(), _reco_nu_vtx_sce);
+          fData->nu_reco_vtx_x = _reco_nu_vtx_sce[0];
+          fData->nu_reco_vtx_y = _reco_nu_vtx_sce[1];
+          fData->nu_reco_vtx_z = _reco_nu_vtx_sce[2];
+          //std::cout<<"Vertex:  "<<nuvtx.X()<<"  "<<nuvtx.Y()<<"  "<<nuvtx.Z()<<"\n";
+        }
+        else
+        {
+          std::cout << "ERROR. Found neutrino PFP w/ != 1 associated vertices..." << std::endl;
+        }
+
+        // collect PFParticle hierarchy originating from this neutrino candidate
+        std::vector<ProxyPfpElem_t> slice_pfp_v;
+        selection::AddDaughters(pfp_pxy, pfp_proxy, slice_pfp_v);
+        //std::cout << "This slice has " << slice_pfp_v.size() << " daughter PFParticles" << std::endl;
+        // create list of tracks and showers associated to this slice
+        std::vector<float>  trkscore_v;
+        std::vector<int>    trkid_v;
+        std::vector<float>  shwrscore_v;
+
+        for (auto pfp : slice_pfp_v)
+        { 
+          auto const &ass_trk_v = pfp.get<recob::Track>();
+          auto const &ass_shr_v = pfp.get<recob::Shower>();
+          float score = nuselection::GetTrackShowerScore(pfp);
+          if (ass_trk_v.size() == 1) {
+            trkid_v   .push_back(ass_trk_v.at(0)->ID());
+            trkscore_v.push_back(score);
+          }
+          if (ass_shr_v.size() == 1) {
+            shwrscore_v.push_back(score);
+          }
+        } // for all PFParticles in the slice
+        //std::cout<<"  - "<<trkscore_v.size()<<" tracks\n";
+        //std::cout<<"  - "<<shwrscore_v.size()<<" showers\n";
+        for(size_t itrk = 0; itrk < trkscore_v.size(); itrk++){
+          fData->nu_trk_id    .push_back(trkid_v[itrk]);
+          fData->nu_trk_score .push_back(trkscore_v[itrk]);
+        }
+        for(size_t ishwr = 0; ishwr < shwrscore_v.size(); ishwr++){
+          fData->nu_shwr_score .push_back(shwrscore_v[ishwr]);
+        }
+      
+      }//if PDG of neutrino
+    }//end loop over PFPs
   }
   
   
