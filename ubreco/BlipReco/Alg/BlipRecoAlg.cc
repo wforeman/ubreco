@@ -153,10 +153,11 @@ namespace blip {
     isMCOverlay = false;
   
     fHitProducer        = pset.get<art::InputTag> ("HitProducer","");
+    fHitProducerOG      = pset.get<art::InputTag> ("HitProducerOG","");
     fHitProducerData    = pset.get<art::InputTag> ("HitProducerData",    "gaushit::DataRecoStage1Test");
     fHitProducerOverlay = pset.get<art::InputTag> ("HitProducerOverlay", "gaushit::OverlayStage1a");
-    fHitProducerOG      = fHitProducerData;
-    if( fHitProducer=="" ) fHitProducer = fHitProducerData;
+    if( fHitProducerOG=="" ) fHitProducerOG = fHitProducerData;
+    if( fHitProducer=="" )   fHitProducer   = fHitProducerData;
     fHitTruthMatch      = pset.get<art::InputTag> ("HitTruthMatch",     "gaushitTruthMatch::OverlayRecoStage1b");
     fTrkProducer        = pset.get<std::string>   ("TrkProducer",       "pandoraInit");
     fGeantProducer      = pset.get<std::string>   ("GeantProducer",     "largeant");
