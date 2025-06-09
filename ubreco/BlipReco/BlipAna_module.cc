@@ -812,6 +812,10 @@ class BlipAna : public art::EDAnalyzer
   //std::vector<std::unique_ptr<::analysis::AnalysisToolBase>> _analysisToolsVec;
 
   // --- Histograms ---
+  
+  TH1D*   h_ncapture_gammaE;
+  TH1D*   h_ncapture_gammaEsum;
+
   TH1D*   h_part_process;
  
   TH1D*   h_nhits[kNplanes];
@@ -971,7 +975,10 @@ class BlipAna : public art::EDAnalyzer
 
     // MC histograms related to truth
     art::TFileDirectory dir_truth = dir_diag.mkdir("Truth");
-    
+   
+    h_ncapture_gammaE    = dir_truth.make<TH1D>("ncapture_gammaE",   "Gammas from neutron capture;True gamma energy [MeV]",300,0,15);
+    h_ncapture_gammaEsum = dir_truth.make<TH1D>("ncapture_gammaEsum","Gammas from neutron capture;Summed gamma energy [MeV]",300,0,15);
+
     h_part_process    = dir_truth.make<TH1D>("part_process","MCParticle->Process()",5,0,5);
     auto xa = h_part_process->GetXaxis();
     xa->SetBinLabel(1,"primary");
@@ -1462,6 +1469,8 @@ void BlipAna::analyze(const art::Event& evt)
   }
 
 
+  std::map< int, std::vector<int> > map_neutron_gammas;
+  std::map< int, std::vector<float> > map_neutron_gammaE;
 
   //====================================
   // Save MCParticle information
@@ -1479,7 +1488,7 @@ void BlipAna::analyze(const art::Event& evt)
       map_g4trkid_index[pPart->TrackId()] = i;
       total_depEnergy       += pinfo[i].depEnergy;
       total_depElectrons    += pinfo[i].depElectrons;
-      
+
       // Save to TTree object
       if(i<kMaxG4){
         
@@ -1529,19 +1538,53 @@ void BlipAna::analyze(const art::Event& evt)
         fData->part_depElectrons[i]    = pinfo[i].depElectrons;
         fData->part_isPrimary[i]       = pinfo[i].isPrimary;
         // check containment
-        bool startInAV  = BlipUtils::IsPointInAV(pPart->Vx(),pPart->Vy(),pPart->Vz());
-        bool endInAV    = BlipUtils::IsPointInAV(pPart->EndPosition()[0],pPart->EndPosition()[1],pPart->EndPosition()[2]);
+        bool startInAV  = BlipUtils::IsPointInAV(pPart->Vx(),pPart->Vy(),pPart->Vz(),2);
+        bool endInAV    = BlipUtils::IsPointInAV(pPart->EndPosition()[0],pPart->EndPosition()[1],pPart->EndPosition()[2],2);
         if( startInAV && endInAV ) fData->part_isContained[i] = true;
- 
         if( fDebugMode && pPart->Process() != "muIoni" ) {
           PrintParticleInfo(i);
           printed++;
         }
+        
+        //-----------------------------------------------
+        // Check contained neutron captures
+        if( pPart->PdgCode() == 2112 && fData->part_isContained[i] && pPart->EndProcess() == "nCapture" ) {
+          map_neutron_gammas[pPart->TrackId()].clear();
+        }
+        // Check for neutron capture products
+        if( pPart->PdgCode() == 22 && pPart->Process() == "nCapture" ) {
+          if( map_neutron_gammas.count(pPart->Mother()) ) {
+            map_neutron_gammas[pPart->Mother()].push_back(pPart->TrackId());
+            map_neutron_gammaE[pPart->Mother()].push_back(pPart->P()*1e3);
+          }
+        }
+        //-----------------------------------------------
+      
+      
       }
+        
     } // endloop over G4 particles
-  
+    
+
+
     if( fDebugMode ) std::cout<<"True total energy deposited: "<<total_depEnergy<<" MeV \n";
-  
+    int nNeutrons = map_neutron_gammas.size();
+    //std::cout<<"Neutrons in this event: "<<map_neutron_gammas.size()<<"\n";
+    if( nNeutrons > 0 ) {
+      for(auto cascade : map_neutron_gammaE ) {
+        //std::cout<<" - "<<cascade.first<<": ";
+        float sumE = 0;
+        for(auto gammaE : cascade.second ) {
+          sumE += gammaE;
+          h_ncapture_gammaE->Fill(gammaE);
+          //std::cout<<gammaE<<" ";
+        }
+        h_ncapture_gammaEsum->Fill(sumE);
+        //std::cout<<"SumE = "<<sumE<<"\n";
+        //std::cout<<"\n";
+      }
+    }
+
   }//endif particles found in event
   
 
