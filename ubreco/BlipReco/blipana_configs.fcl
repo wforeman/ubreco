@@ -14,7 +14,7 @@ microboone_blipana:
   SaveHitInfo:          true # temp
   SaveHitInfo_Truth:    true # temp
   SaveHitInfo_Blips:    true # temp
-  SaveClustInfo:        true
+  SaveClustInfo:        false
   #DebugMode:           true #// enables many more debug statements
 
   SaveNuSelectionTree: false
