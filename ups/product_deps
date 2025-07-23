@@ -2,7 +2,7 @@
 
 # The *parent* line must the first non-commented line and defines this product and version
 # The version must be of the form vxx_yy_zz (e.g. v01_02_03)
-parent ubreco v08_00_00_82
+parent ubreco v08_00_00_92
 
 defaultqual e17
 
@@ -29,11 +29,11 @@ table_fragment_end
 # Add the dependent product and version
 
 product                 version
-ubevt			v08_00_00_82
-ubsim                   v08_00_00_82
-larreco                 v08_04_00_23
+ubevt			v08_00_00_88
+ubsim                   v08_00_00_92
+larreco                 v08_04_00_24
 swtrigger               v02_02_05i
-larpandora              v08_03_00_23
+larpandora              v08_03_00_25
 cetbuildtools	        v7_13_02	-	only_for_build
 end_product_list
 
