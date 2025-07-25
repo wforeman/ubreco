@@ -55,8 +55,6 @@ microboone_blipalg:
   IgnoreDataTrks:       false           #// only consider MC tracks when determining blip-track distances
   CaloPlane:            2               #// plane used for calorimetry (2=collection)
   CalodEdx:             2.8             #// assumed dE/dx for MeV-scale recombination corrections
-  LifetimeCorrection:   false           #// correct blips for lifetime (assumes T0 = 0)
-  SCECorrection:        false           #// correct blips for space charge (requires known XYZ)
   CaloAlg:              @local::microboone_calo_mcc9_data
   
   VetoNoisyChannels:    false           #// don't cluster hits from "noisy" channels (from channel filter service)

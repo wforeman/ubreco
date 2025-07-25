@@ -105,7 +105,7 @@ class BlipAnaTreeDataStruct
   bool  savePrimaries       = false;
   bool  saveTrueParticles   = true;
   bool  saveTrkInfo         = true;
-  bool  saveHitInfo         = true;
+  bool  saveHitInfo         = false;
   bool  saveHitInfo_Blips   = false;
   bool  saveHitInfo_Truth   = false;
   bool  saveClustInfo       = true;
@@ -296,12 +296,16 @@ class BlipAnaTreeDataStruct
   float blip_x[kMaxBlips];            // X position [cm]
   float blip_y[kMaxBlips];            // Y position [cm]
   float blip_z[kMaxBlips];            // Z position [cm]
+  float blip_xSCE[kMaxBlips];         // X position w/SCE corrections [cm]
+  float blip_ySCE[kMaxBlips];         // Y position w/SCE corrections [cm]
+  float blip_zSCE[kMaxBlips];         // Z position w/SCE corrections [cm]
   float blip_sigmayz[kMaxBlips];      // difference in wire intersection points
   float blip_dx[kMaxBlips];           // length along drift direction [cm]
   float blip_dw[kMaxBlips];           // length projected onto axis perpendicular to wire orientation
   float blip_size[kMaxBlips];         // rough size estimation based on time-tick extent and wire span
   int   blip_charge[kMaxBlips];       // blip charge at anode [e-]
   float blip_energy[kMaxBlips];       // blip reco energy [MeV]
+  float blip_energyCorr[kMaxBlips];   // blip reco energy w/SCE and lifetime corrections [MeV]
   float blip_energyTrue[kMaxBlips];   // blip truth energy [MeV]
   float blip_yzcorr[kMaxBlips];       // YZ uniformity correction factor (already applied)
   float blip_proxtrkdist[kMaxBlips];  // distance to nearest track
@@ -309,10 +313,11 @@ class BlipAnaTreeDataStruct
   bool  blip_touchtrk[kMaxBlips];     // is blip touching track?
   int   blip_touchtrkid[kMaxBlips];   // track ID of touched track
   bool  blip_incylinder[kMaxBlips];   // is blip within a cylinder near a track
-  int   blip_clustid[kNplanes][kMaxBlips];    // cluster ID per plane
   int   blip_edepid[kMaxBlips];       // true energy dep ID ("edep_variable[id]")
   int   blip_g4id[kMaxBlips];         // true MC Particle G4ID
   int   blip_partid[kMaxBlips];
+  int   blip_clustid[kNplanes][kMaxBlips];    // cluster ID per plane
+  bool  blip_bydeadwire[kNplanes][kMaxBlips];  // is blip by dead wire?
   
   // --- Reconstructed neutrino slice information (Pandora) --
   bool      nu_isNeutrino;            // neutrino slice identified by Pandora
@@ -495,12 +500,16 @@ class BlipAnaTreeDataStruct
     FillWith(blip_x,          -9999);
     FillWith(blip_y,          -9999);
     FillWith(blip_z,          -9999);
+    FillWith(blip_xSCE,       -9999);
+    FillWith(blip_ySCE,       -9999);
+    FillWith(blip_zSCE,       -9999);
     FillWith(blip_sigmayz,    -9);
     FillWith(blip_dx,         -9);
     FillWith(blip_dw,        -9);
     FillWith(blip_size,       -9);
     FillWith(blip_charge,     -999);
     FillWith(blip_energy,     -999);
+    FillWith(blip_energyCorr, -999);
     FillWith(blip_energyTrue, -999);
     FillWith(blip_yzcorr,     -9);
     FillWith(blip_proxtrkdist,-99);
@@ -513,6 +522,7 @@ class BlipAnaTreeDataStruct
     FillWith(blip_partid,     -9);
     for(int i=0; i<kNplanes; i++){ 
       FillWith(blip_clustid[i],-9);
+      FillWith(blip_bydeadwire[i],false);
     }
 
     nu_isNeutrino           = false;
@@ -636,6 +646,9 @@ class BlipAnaTreeDataStruct
     evtTree->Branch("blip_x",blip_x,"blip_x[nblips]/F");
     evtTree->Branch("blip_y",blip_y,"blip_y[nblips]/F");
     evtTree->Branch("blip_z",blip_z,"blip_z[nblips]/F");
+    evtTree->Branch("blip_xSCE",blip_xSCE,"blip_xSCE[nblips]/F");
+    evtTree->Branch("blip_ySCE",blip_ySCE,"blip_ySCE[nblips]/F");
+    evtTree->Branch("blip_zSCE",blip_zSCE,"blip_zSCE[nblips]/F");
     //evtTree->Branch("blip_sigmayz",blip_sigmayz,"blip_sigmayz[nblips]/F");
     evtTree->Branch("blip_dx",blip_dx,"blip_dx[nblips]/F");
     evtTree->Branch("blip_dw",blip_dw,"blip_dw[nblips]/F");
@@ -655,6 +668,7 @@ class BlipAnaTreeDataStruct
     if( saveTrueParticles ) evtTree->Branch("blip_partid", blip_partid, "blip_partid[nblips]/I");
     if( saveTrueEDeps )     evtTree->Branch("blip_edepid",blip_edepid,"blip_edepid[nblips]/I");
     for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_clustid",i),blip_clustid[i],Form("blip_pl%i_clustid[nblips]/I",i));
+    for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_bydeadwire",i),blip_bydeadwire[i],Form("blip_pl%i_bydeadwire[nblips]/O",i));
 
     if( saveNuInfo ) {
     auto vf = "std::vector<float>";
@@ -1696,6 +1710,7 @@ void BlipAna::analyze(const art::Event& evt)
         // Check contained neutron captures
         if( pPart->PdgCode() == 2112 && fData->part_isContained[i] && pPart->EndProcess() == "nCapture" ) {
           map_neutron_gammas[pPart->TrackId()].clear();
+          if( fDebugMode ) std::cout<<"FOUND A NEUTRON CAPTURE\n";
         }
         // Check for neutron capture products
         if( pPart->PdgCode() == 22 && pPart->Process() == "nCapture" ) {
@@ -2448,6 +2463,9 @@ void BlipAna::analyze(const art::Event& evt)
     fData->blip_x[ib]          = blp.Position.X();
     fData->blip_y[ib]          = blp.Position.Y();
     fData->blip_z[ib]          = blp.Position.Z();
+    fData->blip_xSCE[ib]       = blp.PositionSCE.X();
+    fData->blip_ySCE[ib]       = blp.PositionSCE.Y();
+    fData->blip_zSCE[ib]       = blp.PositionSCE.Z();
     fData->blip_sigmayz[ib]    = blp.SigmaYZ;
     fData->blip_dx[ib]         = blp.dX;
     fData->blip_dw[ib]        = blp.dYZ;
@@ -2459,13 +2477,14 @@ void BlipAna::analyze(const art::Event& evt)
     fData->blip_incylinder[ib] = blp.inCylinder;
     fData->blip_charge[ib]     = blp.Charge;
     fData->blip_energy[ib]     = blp.Energy;
+    fData->blip_energyCorr[ib] = blp.EnergyCorr;
     fData->blip_yzcorr[ib]     = tpcCalib.YZdqdxCorrection(fCaloPlane,blp.Position.Y(),blp.Position.Z());
     for(size_t ipl = 0; ipl<kNplanes; ipl++){
       if( blp.clusters[ipl].NHits <= 0 ) continue;
-      int cl = blp.clusters[ipl].ID;
       //if( map_clustid_index.contains(cl) ) {
       //  cl = map_clustid_index[cl];
-        fData->blip_clustid[ipl][ib] = cl;
+        fData->blip_clustid[ipl][ib]    = blp.clusters[ipl].ID;
+        fData->blip_bydeadwire[ipl][i]  = (blp.clusters[ipl].DeadWireSep==0);
       //}
     }
     if( isMC ) {

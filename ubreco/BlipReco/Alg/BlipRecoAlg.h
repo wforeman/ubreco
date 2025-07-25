@@ -115,13 +115,20 @@ namespace blip {
     std::map<int, std::map<int,double> >  map_g4trkid_chan_energy;
     std::map<int, std::map<int,double> >  map_g4trkid_chan_charge;
 
+    float   kWion;
+    float   kNominalRecombFactor;
+    float   kLArDensity;
+    float   kNominalEfield;
+    float   kDriftVelocity;
+    float   kTickPeriod;
+    int     kNumChannels;
+    float   kLifetime;
+
 
    private:
     
     const detinfo::DetectorProperties* detProp;
     
-    float               mWion;
-
     // --- FCL configs ---
     std::string         fHitProducer;
     std::string         fTrkProducer;
@@ -209,6 +216,7 @@ namespace blip {
     TH1D*   h_clust_true_score[kNplanes]; 
     TH1D*   h_nmatches[kNplanes];
     TH1D*   h_recomb;
+    TH1D*   h_recombSCE;
     TH1D*   h_trkhits_mcfrac;
 
   };

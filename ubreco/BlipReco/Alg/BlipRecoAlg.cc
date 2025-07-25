@@ -10,9 +10,13 @@ namespace blip {
     this->reconfigure(pset);
     
     detProp               = art::ServiceHandle<detinfo::DetectorPropertiesService>()->provider();
-    fNominalRecombFactor  = ModBoxRecomb(fCalodEdx,detProp->Efield());
-    mWion                 = 1000./util::kGeVToElectrons;
-    
+    kLArDensity           = detProp->Density();
+    kNominalEfield        = detProp->Efield();
+    kDriftVelocity        = detProp->DriftVelocity(kNominalEfield,detProp->Temperature());
+    kNominalRecombFactor  = ModBoxRecomb(fCalodEdx,kNominalEfield);
+    kWion                 = 1000./util::kGeVToElectrons;
+   
+ 
     // initialize channel list
     fBadChanMask       .resize(8256,false);
     fBadChanMaskPerEvt = fBadChanMask;
@@ -43,9 +47,9 @@ namespace blip {
     printf("Initializing BlipRecoAlg...\n");
     printf("  - Efield: %.4f kV/cm\n",detProp->Efield());
     printf("  - Temperature: %.4f K\n",detProp->Temperature());
-    printf("  - Drift velocity: %.4f\n",detProp->DriftVelocity(detProp->Efield(),detProp->Temperature()));
+    printf("  - Drift velocity: %.4f\n",kDriftVelocity);
     printf("  - using dE/dx: %.2f MeV/cm\n",fCalodEdx);
-    printf("  - equiv. recomb: %.4f\n",fNominalRecombFactor);
+    printf("  - equiv. recomb: %.4f\n",kNominalRecombFactor);
     printf("  - custom bad chans: %i\n",NBadChansFromFile);
     printf("*******************************************\n");
 
@@ -73,7 +77,8 @@ namespace blip {
     h_chan_nhits      = hdir.make<TH1D>("chan_nhits","Untracked hits;TPC readout channel;Total hits",8256,0,8256);
     h_chan_nclusts    = hdir.make<TH1D>("chan_nclusts","Untracked isolated hits;TPC readout channel;Total clusts",8256,0,8256);
     h_chan_bad        = hdir.make<TH1D>("chan_bad","Channels marked as bad;TPC readout channel",8256,0,8256);
-    h_recomb          = hdir.make<TH1D>("recomb","Applied recombination factor",150,0.40,0.70);
+    h_recomb          = hdir.make<TH1D>("recomb","Applied recombination factor",200,0.40,0.90);
+    h_recombSCE       = hdir.make<TH1D>("recombSCE","Applied recombination factor (SCE corrected)",200,0.40,0.90);
     h_clust_nwires    = hdir.make<TH1D>("clust_nwires","Clusters (pre-cut);Wires in cluster",100,0,100);
     h_clust_timespan  = hdir.make<TH1D>("clust_timespan","Clusters (pre-cut);Time span [ticks]",300,0,300);
 
@@ -188,8 +193,8 @@ namespace blip {
     fCaloAlg            = new calo::CalorimetryAlg( pset.get<fhicl::ParameterSet>("CaloAlg") );
     fCaloPlane          = pset.get<int>           ("CaloPlane",           2);
     fCalodEdx           = pset.get<float>         ("CalodEdx",            2.8);
-    fLifetimeCorr       = pset.get<bool>          ("LifetimeCorrection",  false);
-    fSCECorr            = pset.get<bool>          ("SCECorrection",       false);
+    fLifetimeCorr       = pset.get<bool>          ("LifetimeCorrection",  true);
+    fSCECorr            = pset.get<bool>          ("SCECorrection",       true);
     fYZUniformityCorr   = pset.get<bool>          ("YZUniformityCorrection",true);
     fModBoxA            = pset.get<float>         ("ModBoxA",             0.93);
     fModBoxB            = pset.get<float>         ("ModBoxB",             0.212);
@@ -379,7 +384,7 @@ namespace blip {
   void BlipRecoAlg::RunBlipReco( const art::Event& evt ) {
   
     //std::cout<<"\n"
-    //<<"=========== BlipRecoAlg =========================\n"
+    //<<"------------- BlipRecoAlg ---------------- \n"
     //<<"Event "<<evt.id().event()<<" / run "<<evt.id().run()<<"\n";
   
     //=======================================
@@ -626,7 +631,7 @@ namespace blip {
     std::map<int,std::vector<int>> planehitsMap;
     int nhits_untracked = 0;
 
-    //std::cout<<"Looping over the hits...\n";
+    //std::cout<<"Looping over "<<hitlist.size()<<" hits...\n";
     for(size_t i=0; i<hitlist.size(); i++){
       auto const& thisHit = hitlist[i];
       int   chan    = thisHit->Channel();
@@ -1248,73 +1253,93 @@ namespace blip {
       //h_chan_nclusts->Fill(geom->PlaneWireToChannel(hitinfo[i].plane,hitinfo[i].wire));
     }
 
-    
+    //std::cout<<"Blip calorimetry for "<<blips.size()<<"\n";
+
     //*************************************************************************
-    // Loop over the vector of blips and perform calorimetry calculations
+    // Loop over the vector of blips and perform calorimetry calculation.
+    // Here we fill:
+    //   blip.Charge
+    //   blip.ChargeCorr (lifetime correction)
+    //   blip.PositionSCE (SCE corrections)
+    //   blip.Energy
+    //   blip.EnergyCorr (lifetime + SCE corrections)
     //*************************************************************************
     for(size_t i=0; i<blips.size(); i++){
       auto& blip = blips[i];
+
+      float Efield    = detProp->Efield();
+      float EfieldSCE = detProp->Efield();
+    
       
+      //std::cout<<Efield<<"  "<<EfieldSCE<<"\n";
+
+      // ----------------------------------------------------
+      // Use designated calorimetry plane - defaults to collection. Here we also correct
+      // for YZ non-uniformity across the wireplane, which is pretty standard (procedure 
+      // taken from CalibrationdEdx_module).
       blip.Charge = blip.clusters[fCaloPlane].Charge;
-      
-      // --- YZ uniformity correction ---
-      // Correct for charge-collection non-uniformity based on Y/Z position
-      // (taken from CalibrationdEdx_module)
+      //std::cout<<blip.Charge<<" "<<blip.Position.Y()<<"  "<<blip.Position.Z()<<"\n";
       if( fYZUniformityCorr ) blip.Charge *= tpcCalib_provider.YZdqdxCorrection(fCaloPlane,blip.Position.Y(),blip.Position.Z());
+      //std::cout<<"Uniformity correction applied\n";
 
       // ================================================================================
       // Calculate blip energy assuming T = T_beam (eventually can do more complex stuff
       // like associating blip with some nearby track/shower and using its tagged T0)
-      //    Method 1: Assume a dE/dx = 2 MeV/cm for electrons, use that + local E-field
-      //              calculate recombination.
-      //    Method 2: ESTAR lookup table method ala ArgoNeuT
+      //    Method 1: Assume a dE/dx ~ 2.8 MeV/cm for electrons, use that + local E-field
+      //              to calculate recombination.
+      //    Method 2: ESTAR lookup table method ala ArgoNeuT (TODO)
       // ================================================================================
-      float depEl   = std::max(0.0,(double)blip.Charge);
-      float Efield  = detProp->Efield();
-
+ 
       // --- Lifetime correction ---
-      // Ddisabled by default. Without knowing real T0 of a blip, attempting to 
-      // apply this correction can do more harm than good! Note lifetime is in
-      // units of 'ms', not microseconds, hence the 1E-3 conversion factor.
-      if( fLifetimeCorr && blip.Time>0 ) depEl *= exp( 1e-3*blip.Time/lifetime_provider.Lifetime() ); 
+      // Note: Without knowing real T0 of a blip, this correction is meaningless.
+      //       Units of 'ms', not microseconds, hence the 1E-3 conversion factor.
+      if( fLifetimeCorr && blip.Time>0 ) {
+        float t = blip.Time*1e-3;
+        float tau = lifetime_provider.Lifetime();
+        blip.ChargeCorr = std::max(0.,(double)blip.Charge) * exp( t / tau );
+        //std::cout<<"Lifetime correction applied\n";
+      }
 
       // --- SCE corrections ---
       geo::Point_t point( blip.Position.X(),blip.Position.Y(),blip.Position.Z() );
       if( fSCECorr ) {
 
         // 1) Spatial correction
+        //      TODO: Deal with cases where X falls outside AV (diffuse out-of-time signal)
+        //            For example, maybe re-assign to center of drift volume?
         if( SCE_provider->EnableCalSpatialSCE() ) {
-          // TODO: Deal with cases where X falls outside AV (diffuse out-of-time signal)
-          //       For example, maybe re-assign to center of drift volume?
           geo::Vector_t loc_offset = SCE_provider->GetCalPosOffsets(point);
           point.SetXYZ(point.X()-loc_offset.X(),point.Y()+loc_offset.Y(),point.Z()+loc_offset.Z());
+          blip.PositionSCE.SetXYZ(point.X(),point.Y(),point.Z());
         }
-      
         // 2) E-field correction
         //
-        // notes:
+        //   notes:
         //   - GetEfieldOffsets(xyz) and GetCalEfieldOffsets(xyz) return the exact
         //     same underlying E-field offset map; the only difference is the former
         //     is used in the simulation, and the latter in reconstruction (??).
         //   - The SpaceCharge service must have 'EnableCorSCE' and 'EnableCalEfieldSCE'
         //     enabled in order to use GetCalEfieldOffsets
         //   - Blips can have negative 'X' if the T0 correction isn't applied. Obviously 
-        //     the SCE map will return (0,0,0) for these points.
+        //     the SCE map will return (0,0,0) for these points. Beware!
         if( SCE_provider->EnableCalEfieldSCE() ) {
-          auto const field_offset = SCE_provider->GetCalEfieldOffsets(point); 
-          Efield = detProp->Efield()*std::hypot(1+field_offset.X(),field_offset.Y(),field_offset.Z());;
+          auto const field_offset = SCE_provider->GetCalEfieldOffsets(point);
+          EfieldSCE = Efield*std::hypot(1+field_offset.X(),field_offset.Y(),field_offset.Z());
         }
 
       }
-      
-      // METHOD 1
-      float recomb  = ModBoxRecomb(fCalodEdx,Efield);
-      blip.Energy   = depEl * (1./recomb) * mWion;
-      h_recomb      ->Fill(recomb);
-      
-      // METHOD 2 (TODO)
-      //std::cout<<"Calculating ESTAR energy dep...  "<<depEl<<", "<<Efield<<"\n";
-      //blips[i].EnergyESTAR = ESTAR->Interpolate(depEl, Efield); 
+
+
+      // METHOD 1 - assume a recombination
+      float recomb    = ModBoxRecomb(fCalodEdx,Efield);
+      float recombSCE = ModBoxRecomb(fCalodEdx,EfieldSCE);
+
+      // nominal case + SCE/lifetime corrected
+      blip.Energy     = blip.Charge     * (1./recomb)    * kWion;
+      blip.EnergyCorr = blip.ChargeCorr * (1./recombSCE) * kWion;
+
+      h_recomb        ->Fill(recomb);
+      h_recombSCE     ->Fill(recombSCE);
       
       // ================================================
       // Save the true blip into the object;
@@ -1335,7 +1360,7 @@ namespace blip {
           blip.truth = trueblips[ei.first];
         }
       }
-    
+
     }//endloop over blip vector
 
   }//End main blip reco function
@@ -1344,21 +1369,19 @@ namespace blip {
   
   //###########################################################
   float BlipRecoAlg::ModBoxRecomb(float dEdx, float Efield) {
-    float rho = detProp->Density();
-    float Xi = fModBoxB * dEdx / ( Efield * rho );
+    float Xi = fModBoxB * dEdx / ( Efield * kLArDensity );
     return log(fModBoxA+Xi)/Xi;
   }
 
   float BlipRecoAlg::dQdx_to_dEdx(float dQdx_e, float Efield){
-    float rho = detProp->Density();
-    float beta  = fModBoxB / (rho * Efield);
+    float beta  = fModBoxB / (kLArDensity * Efield);
     float alpha = fModBoxA;
-    return ( exp( beta * mWion * dQdx_e ) - alpha ) / beta;
+    return ( exp( beta * kWion * dQdx_e ) - alpha ) / beta;
   }
   
   float BlipRecoAlg::Q_to_E(float Q, float Efield){
-    if( Efield != detProp->Efield() ) return mWion * (Q/ModBoxRecomb(fCalodEdx,Efield));
-    else                              return mWion * (Q/fNominalRecombFactor);
+    if( Efield != kNominalEfield )  return kWion * (Q/ModBoxRecomb(fCalodEdx,Efield));
+    else                            return kWion * (Q/kNominalRecombFactor);
   }
   
   //###########################################################

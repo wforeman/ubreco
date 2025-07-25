@@ -145,6 +145,7 @@ namespace blipobj {
     int       NPlanes         = -9;         // Num. matched planes
     int       MaxWireSpan     = -9;         // Maximum span of wires on any plane cluster
     float     Charge          = -9;         // Charge on calorimetry plane
+    float     ChargeCorr      = -9;         // Charge following lifetime correction
     float     Energy          = -999;       // Energy (const dE/dx, fcl-configurable)
     float     EnergyCorr      = -999;       // Energy following SCE / lifetime correction
     float     Time            = -999;       // Drift time [ticks]

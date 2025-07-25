@@ -29,7 +29,7 @@ table_fragment_end
 # Add the dependent product and version
 
 product                 version
-ubevt			v08_00_00_88
+ubevt			              v08_00_00_88
 ubsim                   v08_00_00_92
 larreco                 v08_04_00_24
 swtrigger               v02_02_05i
