@@ -378,7 +378,7 @@ namespace blip {
   // Main reconstruction procedure.
   //
   // This function does EVERYTHING. The resulting collections of 
-  // blipobj::HitClusts and blipobj::Blips can then be retrieved after
+  // blip::HitClusts and blip::Blips can then be retrieved after
   // this function is run.
   //###########################################################
   void BlipRecoAlg::RunBlipReco( const art::Event& evt ) {
@@ -901,10 +901,10 @@ namespace blip {
         
         if( !clustIsValid ) continue;
 
-        std::vector<blipobj::HitInfo> hitinfoVec;
+        std::vector<blip::HitInfo> hitinfoVec;
         for(auto hitID : hitIDs ) hitinfoVec.push_back(hitinfo[hitID]);
 
-        blipobj::HitClust hc = BlipUtils::MakeHitClust(hitinfoVec);
+        blip::HitClust hc = BlipUtils::MakeHitClust(hitinfoVec);
         float span = hc.EndTime - hc.StartTime;
         h_clust_nwires->Fill(hc.NWires);
         h_clust_timespan->Fill(span);
@@ -1006,7 +1006,7 @@ namespace blip {
           auto& hcA = hitclust[i];
           
           // initiate hit-cluster group
-          std::vector<blipobj::HitClust> hcGroup;
+          std::vector<blip::HitClust> hcGroup;
           hcGroup.push_back(hcA);
 
           // for each of the other planes, make a map of potential matches
@@ -1130,7 +1130,7 @@ namespace blip {
             
             // ----------------------------------------
             // make our new blip, but if it isn't valid, forget it and move on
-            blipobj::Blip newBlip = BlipUtils::MakeBlip(hcGroup);
+            blip::Blip newBlip = BlipUtils::MakeBlip(hcGroup);
             if( !newBlip.isValid ) continue;
             if( newBlip.NPlanes < fMinMatchedPlanes ) continue;
             
@@ -1223,7 +1223,7 @@ namespace blip {
 
     // Re-index the clusters after removing unmatched
     //if( !keepAllClusts ) {
-    //  std::vector<blipobj::HitClust> hitclust_filt;
+    //  std::vector<blip::HitClust> hitclust_filt;
     //  for(size_t i=0; i<hitclust.size(); i++){
     //    auto& hc = hitclust[i];
     //    int blipID = hc.BlipID;

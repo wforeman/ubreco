@@ -95,8 +95,8 @@ BlipReco3D::BlipReco3D(fhicl::ParameterSet const & pset)
   //produces< art::Assns <  recob::Hit, recob::Cluster> >();
   
   // produce blips and 'hit <--> blip' associations
-  produces< std::vector<  blipobj::Blip > >();
-  produces< art::Assns <  recob::Hit, blipobj::Blip> >();
+  produces< std::vector<  blip::Blip > >();
+  produces< art::Assns <  recob::Hit, blip::Blip> >();
   
 }
 
@@ -122,8 +122,8 @@ void BlipReco3D::produce(art::Event & evt)
   //std::unique_ptr< std::vector< recob::Cluster> > Cluster_v(new std::vector<recob::Cluster>);
   //std::unique_ptr< art::Assns <recob::Hit, recob::Cluster> >  assn_hit_clust_v(new art::Assns<recob::Hit,recob::Cluster> );
 
-  std::unique_ptr< std::vector< blipobj::Blip > > Blip_v(new std::vector<blipobj::Blip>);
-  std::unique_ptr< art::Assns <recob::Hit, blipobj::Blip> >  assn_hit_blip_v(new art::Assns<recob::Hit,blipobj::Blip> );
+  std::unique_ptr< std::vector< blip::Blip > > Blip_v(new std::vector<blip::Blip>);
+  std::unique_ptr< art::Assns <recob::Hit, blip::Blip> >  assn_hit_blip_v(new art::Assns<recob::Hit,blip::Blip> );
   
   //============================================
   // Get hits from input module
@@ -150,7 +150,7 @@ void BlipReco3D::produce(art::Event & evt)
     /*
     // Save a custom blip object containing only the 
     // most relevant info for this particular blip
-    blipobj::Blip nb;
+    blip::Blip nb;
     nb.ID       = b.ID;
     nb.TPC      = b.TPC;
     nb.NPlanes  = b.NPlanes;

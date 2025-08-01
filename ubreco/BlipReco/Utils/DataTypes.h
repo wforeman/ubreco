@@ -13,7 +13,7 @@ typedef std::map<int,float>     mif_t;
 
 const int kNplanes  = 3;  
 
-namespace blipobj {
+namespace blip {
   
   //###################################################
   //  Data structures
@@ -162,10 +162,10 @@ namespace blipobj {
                                             // (also referred to as 'dW')
 
     // Plane/cluster-specific information
-    blipobj::HitClust clusters[kNplanes];
+    blip::HitClust clusters[kNplanes];
 
     // Truth-matched energy deposition
-    blipobj::TrueBlip truth;
+    blip::TrueBlip truth;
     
     // Prototype getter functions
     double X() { return Position.X(); }

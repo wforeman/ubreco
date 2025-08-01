@@ -1,7 +1,4 @@
-#include "blipreco_configs.fcl"
-
 #include "reco_uboone_mcc9_8_driver_stage2.fcl"
-#include "select_reco2_modules.fcl"
 #include "drop_stage2_products.fcl"
 
 # Don't write huge metadata files

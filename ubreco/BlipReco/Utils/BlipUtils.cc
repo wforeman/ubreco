@@ -32,7 +32,7 @@ namespace BlipUtils {
   //===========================================================================
   // Provided a MCParticle, calculate everything we'll need for later calculations
   // and save into ParticleInfo object
-  void FillParticleInfo( const simb::MCParticle& part, blipobj::ParticleInfo& pinfo, SEDVec_t& sedvec, int caloPlane){
+  void FillParticleInfo( const simb::MCParticle& part, blip::ParticleInfo& pinfo, SEDVec_t& sedvec, int caloPlane){
     
 
     // Get important info and do conversions
@@ -82,7 +82,7 @@ namespace BlipUtils {
   //===================================================================
   // Provided a vector of all particle information for event, fill a
   // vector of true blips
-  void MakeTrueBlips( std::vector<blipobj::ParticleInfo>& pinfo, std::vector<blipobj::TrueBlip>& trueblips ) {
+  void MakeTrueBlips( std::vector<blip::ParticleInfo>& pinfo, std::vector<blip::TrueBlip>& trueblips ) {
    
     for(size_t i=0; i<pinfo.size(); i++){
       auto& part = pinfo[i].particle;
@@ -96,7 +96,7 @@ namespace BlipUtils {
       if( part.PdgCode() == 11 && ( proc == "eIoni" || proc == "muIoni" || proc == "hIoni") ) continue;
 
       // Create the new blip
-      blipobj::TrueBlip tb;
+      blip::TrueBlip tb;
       GrowTrueBlip(pinfo[i],tb);
       if( !tb.Energy ) continue;  
 
@@ -125,7 +125,7 @@ namespace BlipUtils {
   
   
   //====================================================================
-  void GrowTrueBlip( blipobj::ParticleInfo& pinfo, blipobj::TrueBlip& tblip ) {
+  void GrowTrueBlip( blip::ParticleInfo& pinfo, blip::TrueBlip& tblip ) {
     
     simb::MCParticle& part = pinfo.particle;
 
@@ -176,9 +176,9 @@ namespace BlipUtils {
   
   //====================================================================
   // Merge blips that are close
-  void MergeTrueBlips(std::vector<blipobj::TrueBlip>& vtb, float dmin){
+  void MergeTrueBlips(std::vector<blip::TrueBlip>& vtb, float dmin){
     if( dmin <= 0 ) return;
-    std::vector<blipobj::TrueBlip> vtb_merged;
+    std::vector<blip::TrueBlip> vtb_merged;
     std::vector<bool> isGrouped(vtb.size(),false);
     
     for(size_t i=0; i<vtb.size(); i++){
@@ -226,9 +226,9 @@ namespace BlipUtils {
 
   
   //=================================================================
-  blipobj::HitClust MakeHitClust(std::vector<blipobj::HitInfo> const& hitinfoVec){
+  blip::HitClust MakeHitClust(std::vector<blip::HitInfo> const& hitinfoVec){
     
-    blipobj::HitClust hc;
+    blip::HitClust hc;
     if( hitinfoVec.size() ) {
       int tpc   = hitinfoVec[0].tpc;
       int plane = hitinfoVec[0].plane;
@@ -339,9 +339,9 @@ namespace BlipUtils {
 
 
   //=================================================================
-  blipobj::Blip MakeBlip( std::vector<blipobj::HitClust> const& hcs){
+  blip::Blip MakeBlip( std::vector<blip::HitClust> const& hcs){
     
-    blipobj::Blip newblip;
+    blip::Blip newblip;
     
     // ------------------------------------------------
     // Must be 1-3 clusts (no more, no less!)
@@ -463,7 +463,7 @@ namespace BlipUtils {
   //====================================================================
   // Break the blip into individual spacepoints if possible (need multiple
   // hits/wires on at least 1 plane)
-  void GetBlipDirection( blipobj::Blip const &blip ){
+  void GetBlipDirection( blip::Blip const &blip ){
     
   }
 
@@ -504,7 +504,7 @@ namespace BlipUtils {
   }
   
   //====================================================================
-  bool DoHitClustsOverlap(blipobj::HitClust const& hc1, blipobj::HitClust const& hc2){
+  bool DoHitClustsOverlap(blip::HitClust const& hc1, blip::HitClust const& hc2){
     
     // only match across different wires in same TPC
     if( hc1.TPC != hc2.TPC    ) return false;
@@ -513,8 +513,8 @@ namespace BlipUtils {
         &&  hc2.StartTime <= hc1.EndTime )  return true;
     else return false;
   }
-  bool DoHitClustsOverlap(blipobj::HitClust const& hc1, float t1, float t2 ){
-    blipobj::HitClust hc2;
+  bool DoHitClustsOverlap(blip::HitClust const& hc1, float t1, float t2 ){
+    blip::HitClust hc2;
     hc2.TPC = hc1.TPC;
     hc2.StartTime = t1;
     hc2.EndTime = t2;
@@ -523,7 +523,7 @@ namespace BlipUtils {
 
   //====================================================================
   // Calculates the level of time overlap between two clusters
-  float CalcHitClustsOverlap(blipobj::HitClust const& hc1, blipobj::HitClust const& hc2){
+  float CalcHitClustsOverlap(blip::HitClust const& hc1, blip::HitClust const& hc2){
     return CalcOverlap(hc1.StartTime,hc1.EndTime,hc2.StartTime,hc2.EndTime);
   }
 
@@ -546,7 +546,7 @@ namespace BlipUtils {
   }
   
   //====================================================================
-  bool DoHitClustsMatch(blipobj::HitClust const& hc1, blipobj::HitClust const& hc2, float minDiffTicks = 2){
+  bool DoHitClustsMatch(blip::HitClust const& hc1, blip::HitClust const& hc2, float minDiffTicks = 2){
     if( fabs(hc1.Time-hc2.Time) < minDiffTicks ) return true;
     else return false;
   }

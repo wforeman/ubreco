@@ -37,10 +37,9 @@
 #include "ubevt/Database/UbooneElectronLifetimeService.h"
 #include "larevt/SpaceChargeServices/SpaceChargeService.h"
 #include "ubreco/BlipReco/Alg/BlipRecoAlg.h"
-#include "ubana/ubana/searchingfornues/Selection/SelectionTools/SelectionToolBase.h"
-#include "ubana/ubana/searchingfornues/Selection/AnalysisTools/AnalysisToolBase.h"
-#include "ubana/ubana/searchingfornues/Selection/CommonDefs/TrackShowerScoreFuncs.h"
-#include "ubana/ubana/searchingfornues/Selection/CommonDefs/SCECorrections.h"
+#include "ubreco/BlipReco/Utils/NuSelectionToolBase.h"
+#include "ubreco/BlipReco/Utils/NuSelectionSCECorrections.h"
+#include "ubreco/BlipReco/Utils/NuSelectionTrackShowerScoreFuncs.h"
 
 // C++ includes
 #include "cetlib/search_path.h"
@@ -323,6 +322,7 @@ class BlipAnaTreeDataStruct
   bool      nu_isNeutrino;            // neutrino slice identified by Pandora
   vfloat_t  nu_nuscore;               // neutrino score
   int       nu_pfp_pdg;               // PDG particle best matching with reco slice
+  bool      nu_sel_mu_cc;             // satisfies inclusive numuCC criteria (DocDB 35518)
   float     nu_reco_vtx_x;            // reconstructed vertex X [cm]
   float     nu_reco_vtx_y;            // reconstructed vertex Y [cm]
   float     nu_reco_vtx_z;            // reconstructed vertex Z [cm]
@@ -526,6 +526,7 @@ class BlipAnaTreeDataStruct
     }
 
     nu_isNeutrino           = false;
+    nu_sel_mu_cc            = false;
     nu_nuscore              .clear();
     nu_pfp_pdg              = -999;
     nu_reco_vtx_x           = -999;
@@ -674,6 +675,7 @@ class BlipAnaTreeDataStruct
     auto vf = "std::vector<float>";
     auto vi = "std::vector<int>";
     evtTree->Branch("nu_isNeutrino",&nu_isNeutrino,"nu_isNeutrino/O");
+    evtTree->Branch("nu_sel_mu_cc",&nu_sel_mu_cc,"nu_sel_mu_cc/O");
     //evtTree->Branch("nu_nuscore",&nu_nuscore,"nu_nuscore/F");
     evtTree->Branch("nu_nuscore", vf, &nu_nuscore);
     evtTree->Branch("nu_pfp_pdg",&nu_pfp_pdg,"nu_pfp_pdg/I");
@@ -805,10 +807,10 @@ class BlipAna : public art::EDAnalyzer
 
   private:
   void    PrintParticleInfo(size_t);
-  void    PrintTrueBlipInfo(const blipobj::TrueBlip&);
-  void    PrintClusterInfo(const blipobj::HitClust&);
-  void    PrintHitInfo(const blipobj::HitInfo&);
-  void    PrintBlipInfo(const blipobj::Blip&);
+  void    PrintTrueBlipInfo(const blip::TrueBlip&);
+  void    PrintClusterInfo(const blip::HitClust&);
+  void    PrintHitInfo(const blip::HitInfo&);
+  void    PrintBlipInfo(const blip::Blip&);
   float   Truncate(float, double = 0.1);
 
 
@@ -862,7 +864,8 @@ class BlipAna : public art::EDAnalyzer
   std::map<unsigned int, unsigned int> _pfpmap;
   
   // selection tool
-  std::vector<std::unique_ptr<::analysis::AnalysisToolBase>> _analysisToolsVec;
+  //std::vector<std::unique_ptr<::analysis::AnalysisToolBase>>    _analysisToolsVec;
+  //std::vector<std::unique_ptr<::selection::SelectionToolBase>>  _selectionToolsVec;
 
 
   // --- Histograms ---
@@ -1217,7 +1220,8 @@ BlipAna::BlipAna(fhicl::ParameterSet const& pset) :
 
   // initialize histograms
   InitializeHistograms();
-  
+ 
+  /*
   // configure and construct Analysis Tool
   auto const tool_psets = pset.get<fhicl::ParameterSet>("NuAnalysisTools");
   for (auto const &tool_pset_labels : tool_psets.get_pset_names())
@@ -1231,6 +1235,7 @@ BlipAna::BlipAna(fhicl::ParameterSet const& pset) :
     for (size_t i = 0; i < _analysisToolsVec.size(); i++)
       _analysisToolsVec[i]->setBranches(fData->selTree);
   }
+  */
   
 
   /*
@@ -1321,10 +1326,10 @@ void BlipAna::analyze(const art::Event& evt)
   // Define vectors of reconstructed data 
   // (hits, 2D hit clusters, 3D blips)
   //===========================================
-  std::vector<blipobj::TrueBlip>  trueblips;
-  std::vector<blipobj::HitInfo>   hitinfo;
-  std::vector<blipobj::HitClust>  hitclust;
-  std::vector<blipobj::Blip>      blips;  
+  std::vector<blip::TrueBlip>  trueblips;
+  std::vector<blip::HitInfo>   hitinfo;
+  std::vector<blip::HitClust>  hitclust;
+  std::vector<blip::Blip>      blips;  
  
 
   //===========================================
@@ -1332,8 +1337,8 @@ void BlipAna::analyze(const art::Event& evt)
   // if not, then run the reconstruction
   //===========================================
   /*
-  art::Handle< std::vector<blipobj::Blip> > blipHandle;
-  std::vector<art::Ptr<blipobj::Blip> > bliplist;
+  art::Handle< std::vector<blip::Blip> > blipHandle;
+  std::vector<art::Ptr<blip::Blip> > bliplist;
   if (evt.getByLabel("blipreco",blipHandle))
     art::fill_ptr_vector(bliplist, blipHandle);
   if( bliplist.size() && fData->loadBlipsFromFile ) {
@@ -1381,7 +1386,7 @@ void BlipAna::analyze(const art::Event& evt)
   //  We can then retrieve these blips and incorporate them into
   //  our analysis however we like:
   //
-  //    std::vector<blipobj::Blip> blipVec = fBlipAlg->blips;
+  //    std::vector<blip::Blip> blipVec = fBlipAlg->blips;
   //
   //  The alg also creates collections of 'HitInfo' and 'HitClust'
   //  structs used in the blip reconstruction process, which can be
@@ -1464,6 +1469,7 @@ void BlipAna::analyze(const art::Event& evt)
 
 
   bool foundNu = false;
+  
   if( pfplist.size() ) {
     
     // grab PFParticles in event
@@ -1493,6 +1499,7 @@ void BlipAna::analyze(const art::Event& evt)
       if ( (PDG == 12) || (PDG == 14) ) 
       {
         foundNu = true;
+        std::cout<<"Found neutrino PFP\n";
         if (pfParticleMetadataList.size() != 0)
         {
           for (unsigned int j = 0; j < pfParticleMetadataList.size(); ++j)
@@ -1520,15 +1527,11 @@ void BlipAna::analyze(const art::Event& evt)
           // save vertex to array
           vtx.at(0)->XYZ(xyz);
           auto nuvtx = TVector3(xyz[0], xyz[1], xyz[2]);
-          //fData->nu_reco_vtx_x = nuvtx.X();
-          //fData->nu_reco_vtx_y = nuvtx.Y();
-          //fData->nu_reco_vtx_z = nuvtx.Z();
           float _reco_nu_vtx_sce[3];
-          searchingfornues::ApplySCECorrectionXYZ(nuvtx.X(),nuvtx.Y(),nuvtx.Z(), _reco_nu_vtx_sce);
+          nuselection::ApplySCECorrectionXYZ(nuvtx.X(),nuvtx.Y(),nuvtx.Z(), _reco_nu_vtx_sce);
           fData->nu_reco_vtx_x = _reco_nu_vtx_sce[0];
           fData->nu_reco_vtx_y = _reco_nu_vtx_sce[1];
           fData->nu_reco_vtx_z = _reco_nu_vtx_sce[2];
-          //std::cout<<"Vertex:  "<<nuvtx.X()<<"  "<<nuvtx.Y()<<"  "<<nuvtx.Z()<<"\n";
         }
         else
         {
@@ -1541,24 +1544,36 @@ void BlipAna::analyze(const art::Event& evt)
         //std::cout << "This slice has " << slice_pfp_v.size() << " daughter PFParticles" << std::endl;
       
         // create list of tracks and showers associated to this slice
-        //std::vector<art::Ptr<recob::Track>> sliceTracks;
-        //std::vector<art::Ptr<recob::Shower>> sliceShowers;
+        std::vector<art::Ptr<recob::Track>> sliceTracks;
+        std::vector<art::Ptr<recob::Shower>> sliceShowers;
         std::vector<float>  trkscore_v;
         std::vector<int>    trkid_v;
+        std::vector<float>  trkstartx_v;
+        std::vector<float>  trkstarty_v;
+        std::vector<float>  trkstartz_v;
         std::vector<float>  shwrscore_v;
 
         for (auto pfp : slice_pfp_v)
         {
-          auto const &ass_trk_v = pfp.get<recob::Track>();
-          auto const &ass_shr_v = pfp.get<recob::Shower>();
-          float score = searchingfornues::GetTrackShowerScore(pfp);
-          if (ass_trk_v.size() == 1) {
-            trkid_v   .push_back(ass_trk_v.at(0)->ID());
+          auto const &trk_v = pfp.get<recob::Track>();
+          auto const &shr_v = pfp.get<recob::Shower>();
+          float score = nuselection::GetTrackShowerScore(pfp);
+          
+          if( trk_v.size() == 1 ) {
+            auto trk = trk_v.at(0); 
+            sliceTracks.push_back(trk);
+            trkid_v   .push_back(trk->ID());
             trkscore_v.push_back(score);
+            trkstartx_v.push_back(trk->Start().X());
+            trkstarty_v.push_back(trk->Start().Y());
+            trkstartz_v.push_back(trk->Start().Z());
           }
-          if (ass_shr_v.size() == 1) {
+          if( shr_v.size() == 1 ) {
+            auto shower = shr_v.at(0);
+            sliceShowers.push_back(shower);
             shwrscore_v.push_back(score);
           }
+
         } // for all PFParticles in the slice
      
         //std::cout<<"  - "<<trkscore_v.size()<<" tracks\n";
@@ -1574,10 +1589,10 @@ void BlipAna::analyze(const art::Event& evt)
 
         
         // run analysis on this slice
-        for (size_t i = 0; i < _analysisToolsVec.size(); i++) {
-          bool fIsData = !fEvtIsMC;
-          _analysisToolsVec[i]->analyzeSlice(evt, slice_pfp_v, fIsData, true);
-        }
+       // for (size_t i = 0; i < _analysisToolsVec.size(); i++) {
+       //   bool fIsData = !fEvtIsMC;
+       //   _analysisToolsVec[i]->analyzeSlice(evt, slice_pfp_v, fIsData, true);
+       // }
 
         //float* fData->selTree->GetBranch( 
   
@@ -1640,7 +1655,7 @@ void BlipAna::analyze(const art::Event& evt)
   std::map<int,int> map_g4trkid_index;
   if( plist.size() ) {
     
-    std::vector<blipobj::ParticleInfo>& pinfo = fBlipAlg->pinfo;
+    std::vector<blip::ParticleInfo>& pinfo = fBlipAlg->pinfo;
     
     // Loop through the MCParticles
     if( fDebugMode ) std::cout<<"\nLooping over "<<plist.size()<<" G4 MCParticles: \n";
@@ -1750,7 +1765,7 @@ void BlipAna::analyze(const art::Event& evt)
   //====================================
   // Save TrueBlip information
   //====================================
-  //std::vector<blipobj::TrueBlip>& trueblips = fBlipAlg->trueblips;
+  //std::vector<blip::TrueBlip>& trueblips = fBlipAlg->trueblips;
   fData->nedeps = (int)trueblips.size();
   if( trueblips.size() ) {
     if( fDebugMode ) std::cout<<"\nLooping over "<<trueblips.size()<<" true blips / 'edeps':\n";
@@ -2690,7 +2705,7 @@ void BlipAna::PrintParticleInfo(size_t i){
   ); 
 }
 
-void BlipAna::PrintTrueBlipInfo(const blipobj::TrueBlip& tb){
+void BlipAna::PrintTrueBlipInfo(const blip::TrueBlip& tb){
   printf("  edepID: %5i  G4ID: %-6i PDG: %-10i XYZ: %7.2f, %7.2f, %7.2f, %8.3f MeV, %8i e- deposited, %8i e- @anode,  %12s\n",
    tb.ID,
    tb.LeadG4ID,
@@ -2705,7 +2720,7 @@ void BlipAna::PrintTrueBlipInfo(const blipobj::TrueBlip& tb){
   ); 
 }
 
-void BlipAna::PrintHitInfo(const blipobj::HitInfo& hi){
+void BlipAna::PrintHitInfo(const blip::HitInfo& hi){
   printf("  hitID: %4i, TPC: %i, plane: %i, leadwire: %4i, amp: %7.2f, peakT: %7.2f, RMS: %7.2f, G4ID: %6i, recoTrack: %4i\n",
     hi.hitid,
     hi.tpc,
@@ -2719,7 +2734,7 @@ void BlipAna::PrintHitInfo(const blipobj::HitInfo& hi){
   );
 }
 
-void BlipAna::PrintClusterInfo(const blipobj::HitClust& hc){
+void BlipAna::PrintClusterInfo(const blip::HitClust& hc){
   printf("  clustID: %4i, TPC: %i, plane: %i, time range: %7.2f - %7.2f, timespan: %6.2f, leadWire: %3i, nwires: %3i, nhits: %3i, edepid: %i, isMatched: %i, blipID: %i\n",
     hc.ID,
     hc.TPC,
@@ -2736,7 +2751,7 @@ void BlipAna::PrintClusterInfo(const blipobj::HitClust& hc){
   );
 }
 
-void BlipAna::PrintBlipInfo(const blipobj::Blip& bl){
+void BlipAna::PrintBlipInfo(const blip::Blip& bl){
   printf("  blipID: %4i, TPC: %i, charge: %8.0i,  recoEnergy: %8.3f MeV, XYZ: %6.1f, %6.1f, %6.1f,   EdepID: %i\n",
   bl.ID,
   bl.TPC,
