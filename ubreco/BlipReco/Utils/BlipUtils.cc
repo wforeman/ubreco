@@ -273,6 +273,7 @@ namespace BlipUtils {
         qvec          .push_back(q);
         dqvec         .push_back(dq);
         rmsvec        .push_back(hitinfo.rms);
+        if( hitinfo.trkid >= 0 ) hc.TrkIDs.push_back(hitinfo.trkid);
         if( hitinfo.g4trkid > 0 ) hc.G4IDs.insert(hitinfo.g4trkid);
         if( hitinfo.gof < 0 ) hc.NPulseTrainHits++;
         if( hitinfo.touchTrk ) hc.TouchTrkID   = hitinfo.touchTrkID; 
@@ -429,6 +430,20 @@ namespace BlipUtils {
     newblip.Position.SetX(newblip.Time*tick_to_cm);
     newblip.dX = (t_max-t_min) * tick_to_cm;
     
+    // Calculate fraction of hits belonging to a track
+    std::map<int,int> count_trackids; int total_hits = 0;
+    for(auto hc : hcs ) { 
+      total_hits += hc.NHits;
+      for(auto trkid : hc.TrkIDs) count_trackids[trkid]++;
+    }
+    if( count_trackids.size() && total_hits ) {
+      auto it = std::max_element(count_trackids.begin(),count_trackids.end(),
+        [](const std::pair<int, int>& p1, const std::pair<int, int>& p2) {
+        return p1.second < p2.second;});
+      newblip.TrkID = it->first;
+      newblip.TrkIDFrac = it->second/(float)total_hits;
+    }
+
     // OK, we made it! Flag as "valid" and ship it out.
     newblip.isValid = true;
     return newblip;

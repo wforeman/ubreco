@@ -292,8 +292,13 @@ class BlipAnaTreeDataStruct
   int   blip_proxtrkid[kMaxBlips];    // index of nearest trk
   bool  blip_touchtrk[kMaxBlips];     // is blip touching track?
   int   blip_touchtrkid[kMaxBlips];   // track ID of touched track
+  int   blip_trkid[kMaxBlips];        // track ID of track with shared hits
+  float blip_trkidfrac[kMaxBlips];    // fraction of blip's hits shared w/track
   bool  blip_incylinder[kMaxBlips];   // is blip within a cylinder near a track
-  int   blip_clustid[kNplanes][kMaxBlips];     // cluster ID per plane
+  int   blip_clustid[kNplanes][kMaxBlips];      // cluster ID per plane
+  int   blip_nhits[kNplanes][kMaxBlips];        // hits per plane
+  int   blip_nwires[kNplanes][kMaxBlips];       // wires per plane
+  bool  blip_bydeadwire[kNplanes][kMaxBlips];   // is blip by dead wire on this plane?
 
   // --- Reconstructed neutrino slice information (Pandora) --
   bool      nu_isNeutrino;            // neutrino slice identified by Pandora
@@ -483,11 +488,16 @@ class BlipAnaTreeDataStruct
     FillWith(blip_proxtrkid,  -9);
     FillWith(blip_touchtrk,   false);
     FillWith(blip_touchtrkid,  -9);
+    FillWith(blip_trkid,      -9);
+    FillWith(blip_trkidfrac,  -9);
     FillWith(blip_incylinder, false);
     FillWith(blip_edepid,     -9);
     FillWith(blip_g4id,     -9);
     for(int i=0; i<kNplanes; i++){ 
       FillWith(blip_clustid[i],-9);
+      FillWith(blip_bydeadwire[i],false);
+      FillWith(blip_nhits[i], 0);
+      FillWith(blip_nwires[i],0);
     }
 
     nu_isNeutrino           = false;
@@ -609,16 +619,19 @@ class BlipAnaTreeDataStruct
     evtTree->Branch("blip_energy",blip_energy,"blip_energy[nblips]/F");
     evtTree->Branch("blip_yzcorr",blip_yzcorr,"blip_yzcorr[nblips]/F");
     //evtTree->Branch("blip_energyTrue",blip_energyTrue,"blip_energyTrue[nblips]/F");
-    evtTree->Branch("blip_incylinder",blip_incylinder,"blip_incylinder[nblips]/O");
+    //evtTree->Branch("blip_incylinder",blip_incylinder,"blip_incylinder[nblips]/O");
     evtTree->Branch("blip_proxtrkdist",blip_proxtrkdist,"blip_proxtrkdist[nblips]/F");
+    evtTree->Branch("blip_proxtrkid",blip_proxtrkid,"blip_proxtrkid[nblips]/I");
     evtTree->Branch("blip_touchtrk",blip_touchtrk,"blip_touchtrk[nblips]/O");
-    if( saveTrkInfo ) {
-      evtTree->Branch("blip_proxtrkid",blip_proxtrkid,"blip_proxtrkid[nblips]/I");
-      evtTree->Branch("blip_touchtrkid",blip_touchtrkid,"blip_touchtrkid[nblips]/I");
-    }
+    evtTree->Branch("blip_touchtrkid",blip_touchtrkid,"blip_touchtrkid[nblips]/I");
+    evtTree->Branch("blip_trkid",blip_trkid,"blip_trkid[nblips]/I");
+    evtTree->Branch("blip_trkidfrac",blip_trkidfrac,"blip_trkidfrac[nblips]/F");
     evtTree->Branch("blip_g4id",blip_g4id,"blip_g4id[nblips]/I");
     if( saveTrueEDeps ) evtTree->Branch("blip_edepid",blip_edepid,"blip_edepid[nblips]/I");
     for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_clustid",i),blip_clustid[i],Form("blip_pl%i_clustid[nblips]/I",i));
+    for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_bydeadwire",i),blip_bydeadwire[i],Form("blip_pl%i_bydeadwire[nblips]/O",i));
+    for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_nhits",i),blip_nhits[i],Form("blip_pl%i_nhits[nblips]/I",i));
+    for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_nwires",i),blip_nwires[i],Form("blip_pl%i_nwires[nblips]/I",i));
    
     if( saveNuInfo ) {
     auto vf = "std::vector<float>";
@@ -2199,12 +2212,14 @@ void BlipAna::analyze(const art::Event& evt)
     fData->blip_z[i]          = blp.Position.Z();
     fData->blip_sigmayz[i]    = blp.SigmaYZ;
     fData->blip_dx[i]         = blp.dX;
-    fData->blip_dw[i]        = blp.dYZ;
+    fData->blip_dw[i]         = blp.dYZ;
     fData->blip_size[i]       = sqrt( pow(blp.dX,2) + pow(blp.dYZ,2) );
     fData->blip_proxtrkdist[i]= blp.ProxTrkDist;
     fData->blip_proxtrkid[i]  = blp.ProxTrkID;
     fData->blip_touchtrk[i]   = (blp.TouchTrkID >= 0 );
     fData->blip_touchtrkid[i] = blp.TouchTrkID;
+    fData->blip_trkid[i]      = blp.TrkID;
+    fData->blip_trkidfrac[i]  = blp.TrkIDFrac;
     fData->blip_incylinder[i] = blp.inCylinder;
     fData->blip_charge[i]     = blp.Charge;
     fData->blip_energy[i]     = blp.Energy;
@@ -2217,7 +2232,10 @@ void BlipAna::analyze(const art::Event& evt)
     h_blip_charge_UV->Fill( 0.001*blp.clusters[0].Charge, 0.001*blp.clusters[1].Charge );
     for(size_t ipl = 0; ipl<kNplanes; ipl++){
       if( blp.clusters[ipl].NHits <= 0 ) continue;
-      fData->blip_clustid[ipl][i] = blp.clusters[ipl].ID;
+      fData->blip_clustid[ipl][i]    = blp.clusters[ipl].ID;
+      fData->blip_bydeadwire[ipl][i]  = (blp.clusters[ipl].DeadWireSep==0);
+      fData->blip_nhits[ipl][i]       = blp.clusters[ipl].NHits;
+      fData->blip_nwires[ipl][i]      = blp.clusters[ipl].NWires;
     }
 
     // Select picky (high-quality) blips:
