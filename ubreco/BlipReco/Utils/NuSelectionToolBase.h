@@ -33,7 +33,8 @@ namespace selection {
   using ProxyPfpElem_t = nuselection::ProxyPfpElem_t;
   using ProxyClusColl_t = nuselection::ProxyClusColl_t;
   using ProxyClusElem_t = nuselection::ProxyClusElem_t;
-  
+  using ProxyCaloColl_t = nuselection::ProxyCaloColl_t;
+
   // a map linking the PFP Self() attribute used for hierarchy building to the PFP index in the event record
   std::map<unsigned int, unsigned int> _pfpmap;
   

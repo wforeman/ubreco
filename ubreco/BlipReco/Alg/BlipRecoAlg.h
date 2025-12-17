@@ -80,7 +80,6 @@ namespace blip {
     void    ProcessHits(const art::Event& evt);
     void    PrintConfig();
    
-    bool    ranHitProcess = false;
     bool    ranBlipTruth = false;
 
     // TO-DO: make these private and create getters instead

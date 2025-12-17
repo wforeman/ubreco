@@ -31,15 +31,23 @@
 #include "lardataobj/RecoBase/Hit.h"
 #include "lardataobj/RecoBase/PFParticleMetadata.h"
 #include "lardataobj/AnalysisBase/Calorimetry.h"
+#include "lardataobj/RecoBase/OpFlash.h"
+#include "lardataobj/AnalysisBase/T0.h"
+#include "larevt/SpaceChargeServices/SpaceChargeService.h"
 
 // MicroBooNE-specific includes
 #include "ubevt/Database/UbooneElectronLifetimeProvider.h"
 #include "ubevt/Database/UbooneElectronLifetimeService.h"
-#include "larevt/SpaceChargeServices/SpaceChargeService.h"
 #include "ubreco/BlipReco/Alg/BlipRecoAlg.h"
 #include "ubreco/BlipReco/Utils/NuSelectionToolBase.h"
 #include "ubreco/BlipReco/Utils/NuSelectionSCECorrections.h"
 #include "ubreco/BlipReco/Utils/NuSelectionTrackShowerScoreFuncs.h"
+#include "ubreco/BlipReco/Utils/NuSelectionLLR_PID.h"
+#include "ubreco/BlipReco/Utils/NuSelectionLLRPID_proton_muon_lookup.h"
+#include "ubreco/BlipReco/Utils/NuSelectionLLRPID_correction_lookup.h"
+#include "ubreco/BlipReco/Utils/NuSelectionCalibrationFuncs.h"
+#include "ubobj/CRT/CRTHit.hh"
+
 
 // C++ includes
 #include "cetlib/search_path.h"
@@ -295,9 +303,6 @@ class BlipAnaTreeDataStruct
   float blip_x[kMaxBlips];            // X position [cm]
   float blip_y[kMaxBlips];            // Y position [cm]
   float blip_z[kMaxBlips];            // Z position [cm]
-  float blip_xSCE[kMaxBlips];         // X position w/SCE corrections [cm]
-  float blip_ySCE[kMaxBlips];         // Y position w/SCE corrections [cm]
-  float blip_zSCE[kMaxBlips];         // Z position w/SCE corrections [cm]
   float blip_sigmayz[kMaxBlips];      // difference in wire intersection points
   float blip_dx[kMaxBlips];           // length along drift direction [cm]
   float blip_dw[kMaxBlips];           // length projected onto axis perpendicular to wire orientation
@@ -311,24 +316,31 @@ class BlipAnaTreeDataStruct
   int   blip_proxtrkid[kMaxBlips];    // index of nearest trk
   bool  blip_touchtrk[kMaxBlips];     // is blip touching track?
   int   blip_touchtrkid[kMaxBlips];   // track ID of touched track
+  int   blip_trkid[kMaxBlips];        // track ID of track with shared hits
+  float blip_trkidfrac[kMaxBlips];    // fraction of blip's hits shared w/track
   bool  blip_incylinder[kMaxBlips];   // is blip within a cylinder near a track
   int   blip_edepid[kMaxBlips];       // true energy dep ID ("edep_variable[id]")
   int   blip_g4id[kMaxBlips];         // true MC Particle G4ID
   int   blip_partid[kMaxBlips];
   int   blip_clustid[kNplanes][kMaxBlips];    // cluster ID per plane
+  int   blip_nhits[kNplanes][kMaxBlips];        
+  int   blip_nwires[kNplanes][kMaxBlips];        
   bool  blip_bydeadwire[kNplanes][kMaxBlips];  // is blip by dead wire?
   
   // --- Reconstructed neutrino slice information (Pandora) --
   bool      nu_isNeutrino;            // neutrino slice identified by Pandora
-  vfloat_t  nu_nuscore;               // neutrino score
+  float     nu_nuscore;
   int       nu_pfp_pdg;               // PDG particle best matching with reco slice
-  bool      nu_sel_mu_cc;             // satisfies inclusive numuCC criteria (DocDB 35518)
+  bool      nu_sel_mucc;             // satisfies inclusive numuCC criteria (DocDB 35518 / 32933)
+  int       nu_crt_pe;                // CRT veto flash PE
+  float     nu_crt_closestCosDist;    // closest approach of nearby tagged cosmic track
   float     nu_reco_vtx_x;            // reconstructed vertex X [cm]
   float     nu_reco_vtx_y;            // reconstructed vertex Y [cm]
   float     nu_reco_vtx_z;            // reconstructed vertex Z [cm]
-  vint_t    nu_trk_id;        // trackIDs for tracks in this PFP
-  vfloat_t  nu_trk_score;     // track scores for tracks in this PFP
-  vfloat_t  nu_shwr_score;    // shower scores in this PFP
+  //vint_t    nu_trk_id;        // trackIDs for tracks in this PFP
+  //vfloat_t  nu_trk_score;     // track scores for tracks in this PFP
+  //vfloat_t  nu_shwr_score;    // shower scores in this PFP
+
 
   TTree*  calibTree;
   int     acptrk_npts;
@@ -500,9 +512,6 @@ class BlipAnaTreeDataStruct
     FillWith(blip_x,          -9999);
     FillWith(blip_y,          -9999);
     FillWith(blip_z,          -9999);
-    FillWith(blip_xSCE,       -9999);
-    FillWith(blip_ySCE,       -9999);
-    FillWith(blip_zSCE,       -9999);
     FillWith(blip_sigmayz,    -9);
     FillWith(blip_dx,         -9);
     FillWith(blip_dw,        -9);
@@ -516,6 +525,8 @@ class BlipAnaTreeDataStruct
     FillWith(blip_proxtrkid,  -9);
     FillWith(blip_touchtrk,   false);
     FillWith(blip_touchtrkid,  -9);
+    FillWith(blip_trkid,      -9);
+    FillWith(blip_trkidfrac,  -9);
     FillWith(blip_incylinder, false);
     FillWith(blip_edepid,     -9);
     FillWith(blip_g4id,       -9);
@@ -523,18 +534,22 @@ class BlipAnaTreeDataStruct
     for(int i=0; i<kNplanes; i++){ 
       FillWith(blip_clustid[i],-9);
       FillWith(blip_bydeadwire[i],false);
+      FillWith(blip_nhits[i], 0);
+      FillWith(blip_nwires[i],0);
     }
 
     nu_isNeutrino           = false;
-    nu_sel_mu_cc            = false;
-    nu_nuscore              .clear();
+    nu_sel_mucc             = false;
+    nu_crt_pe               = -9;
+    nu_crt_closestCosDist   = 9999;
+    nu_nuscore              = -9;
     nu_pfp_pdg              = -999;
     nu_reco_vtx_x           = -999;
     nu_reco_vtx_y           = -999;
     nu_reco_vtx_z           = -999;
-    nu_trk_score            .clear();
-    nu_trk_id               .clear();
-    nu_shwr_score           .clear();
+    //nu_trk_score            .clear();
+    //nu_trk_id               .clear();
+    //nu_shwr_score           .clear();
   }
 
   // === Function for resizing vectors (if necessary) ===
@@ -604,7 +619,7 @@ class BlipAnaTreeDataStruct
     }
     evtTree->Branch("hit_clustid",hit_clustid,"hit_clustid[nhits]/I"); 
     evtTree->Branch("hit_blipid",hit_blipid,"hit_blipid[nhits]/I");
-    evtTree->Branch("hit_gof",hit_gof,"hit_gof[nhits]/F");
+    //evtTree->Branch("hit_gof",hit_gof,"hit_gof[nhits]/F");
     }
  
 
@@ -642,49 +657,54 @@ class BlipAnaTreeDataStruct
     }
 
     evtTree->Branch("nblips",&nblips,"nblips/I");
-    evtTree->Branch("blip_id",&blip_id,"blip_id/I");
+    evtTree->Branch("blip_id",blip_id,"blip_id[nblips]/I");
     evtTree->Branch("blip_nplanes",blip_nplanes,"blip_nplanes[nblips]/I");
     evtTree->Branch("blip_x",blip_x,"blip_x[nblips]/F");
     evtTree->Branch("blip_y",blip_y,"blip_y[nblips]/F");
     evtTree->Branch("blip_z",blip_z,"blip_z[nblips]/F");
-    evtTree->Branch("blip_xSCE",blip_xSCE,"blip_xSCE[nblips]/F");
-    evtTree->Branch("blip_ySCE",blip_ySCE,"blip_ySCE[nblips]/F");
-    evtTree->Branch("blip_zSCE",blip_zSCE,"blip_zSCE[nblips]/F");
     //evtTree->Branch("blip_sigmayz",blip_sigmayz,"blip_sigmayz[nblips]/F");
     evtTree->Branch("blip_dx",blip_dx,"blip_dx[nblips]/F");
     evtTree->Branch("blip_dw",blip_dw,"blip_dw[nblips]/F");
     evtTree->Branch("blip_size",blip_size,"blip_size[nblips]/F");
     evtTree->Branch("blip_charge",blip_charge,"blip_charge[nblips]/I");
     evtTree->Branch("blip_energy",blip_energy,"blip_energy[nblips]/F");
-    evtTree->Branch("blip_yzcorr",blip_yzcorr,"blip_yzcorr[nblips]/F");
+    //evtTree->Branch("blip_yzcorr",blip_yzcorr,"blip_yzcorr[nblips]/F");
     //evtTree->Branch("blip_energyTrue",blip_energyTrue,"blip_energyTrue[nblips]/F");
-    evtTree->Branch("blip_incylinder",blip_incylinder,"blip_incylinder[nblips]/O");
+    //evtTree->Branch("blip_incylinder",blip_incylinder,"blip_incylinder[nblips]/O");
     evtTree->Branch("blip_proxtrkdist",blip_proxtrkdist,"blip_proxtrkdist[nblips]/F");
+    evtTree->Branch("blip_proxtrkid",blip_proxtrkid,"blip_proxtrkid[nblips]/I");
     evtTree->Branch("blip_touchtrk",blip_touchtrk,"blip_touchtrk[nblips]/O");
-    if( saveTrkInfo ) {
-      evtTree->Branch("blip_proxtrkid",blip_proxtrkid,"blip_proxtrkid[nblips]/I");
-      evtTree->Branch("blip_touchtrkid",blip_touchtrkid,"blip_touchtrkid[nblips]/I");
-    }
+    evtTree->Branch("blip_touchtrkid",blip_touchtrkid,"blip_touchtrkid[nblips]/I");
+    evtTree->Branch("blip_trkid",blip_trkid,"blip_trkid[nblips]/I");
+    evtTree->Branch("blip_trkidfrac",blip_trkidfrac,"blip_trkidfrac[nblips]/F");
     evtTree->Branch("blip_g4id",blip_g4id,"blip_g4id[nblips]/I");
     if( saveTrueParticles ) evtTree->Branch("blip_partid", blip_partid, "blip_partid[nblips]/I");
     if( saveTrueEDeps )     evtTree->Branch("blip_edepid",blip_edepid,"blip_edepid[nblips]/I");
+    if( saveClustInfo ) 
     for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_clustid",i),blip_clustid[i],Form("blip_pl%i_clustid[nblips]/I",i));
+    
     for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_bydeadwire",i),blip_bydeadwire[i],Form("blip_pl%i_bydeadwire[nblips]/O",i));
+    for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_nhits",i),blip_nhits[i],Form("blip_pl%i_nhits[nblips]/I",i));
+    for(int i=0;i<kNplanes;i++) evtTree->Branch(Form("blip_pl%i_nwires",i),blip_nwires[i],Form("blip_pl%i_nwires[nblips]/I",i));
 
     if( saveNuInfo ) {
-    auto vf = "std::vector<float>";
-    auto vi = "std::vector<int>";
-    evtTree->Branch("nu_isNeutrino",&nu_isNeutrino,"nu_isNeutrino/O");
-    evtTree->Branch("nu_sel_mu_cc",&nu_sel_mu_cc,"nu_sel_mu_cc/O");
-    //evtTree->Branch("nu_nuscore",&nu_nuscore,"nu_nuscore/F");
-    evtTree->Branch("nu_nuscore", vf, &nu_nuscore);
+      //auto vf = "std::vector<float>";
+      //auto vi = "std::vector<int>";
+    
+    evtTree->Branch("nu_crt_pe",&nu_crt_pe,"nu_crt_pe/I");
+    evtTree->Branch("nu_crt_closestCosDist", &nu_crt_closestCosDist, "nu_crt_closestCosDist/F");
+    //evtTree->Branch("nu_isNeutrino",&nu_isNeutrino,"nu_isNeutrino/O");
+    evtTree->Branch("nu_sel_mucc",&nu_sel_mucc,"nu_sel_mucc/O");
+    evtTree->Branch("nu_nuscore",&nu_nuscore,"nu_nuscore/F");
+
+    //evtTree->Branch("nu_nuscore", vf, &nu_nuscore);
     evtTree->Branch("nu_pfp_pdg",&nu_pfp_pdg,"nu_pfp_pdg/I");
     evtTree->Branch("nu_reco_vtx_x",&nu_reco_vtx_x,"nu_reco_vtx_x/F");
     evtTree->Branch("nu_reco_vtx_y",&nu_reco_vtx_y,"nu_reco_vtx_y/F");
     evtTree->Branch("nu_reco_vtx_z",&nu_reco_vtx_z,"nu_reco_vtx_z/F");
-    evtTree->Branch("nu_trk_id", vi, &nu_trk_id);
-    evtTree->Branch("nu_trk_score", vf, &nu_trk_score);
-    evtTree->Branch("nu_shwr_score", vf, &nu_shwr_score);
+    //evtTree->Branch("nu_trk_id", vi, &nu_trk_id);
+    //evtTree->Branch("nu_trk_score", vf, &nu_trk_score);
+    //evtTree->Branch("nu_shwr_score", vf, &nu_shwr_score);
     evtTree->Branch("mctruth_nu_pdg",&mctruth_nu_pdg,"mctruth_nu_pdg/I");
     evtTree->Branch("mctruth_nu_ccnc",&mctruth_nu_ccnc,"mctruth_nu_ccnc/I");
     evtTree->Branch("mctruth_nu_mode",&mctruth_nu_mode,"mctruth_nu_mode/I");
@@ -813,6 +833,7 @@ class BlipAna : public art::EDAnalyzer
   void    PrintBlipInfo(const blip::Blip&);
   float   Truncate(float, double = 0.1);
 
+  bool    GetCRTInfo(const art::Event&, float&, std::vector<recob::Track>&);
 
   // --- Data and calo objects ---
   BlipAnaTreeDataStruct*  fData;
@@ -827,10 +848,23 @@ class BlipAna : public art::EDAnalyzer
   int                 fCaloPlane;
   std::vector<bool>   fSavePlaneInfo;
   bool                fDoACPTrkCalib;
+  bool                fSaveSCECorrLoc;
+  bool                fSaveCorrEnergy;
 
+  bool                fApplyNuSelection;
+  float               fNuSelTopologicalScore;   // > 0.06
+  float               fNuSelCRTPE;              // < 100
+  float               fNuSelClosestNuCosmicDist; // > 5cm
+  float               fNuMuCC_TrkDist;          // < 4cm
+  float               fNuMuCC_TrkPIDScore;      // > 0.2
+  float               fNuMuCC_TrkLength;        // > 10cm
+  float               fNuMuCC_TrkScore;         // > 0.8
+  std::vector<float>  fNuMuCC_MCSQuality;       // -0.5 to 0.5
+  
   // --- Counters and such ---
   bool  fIsRealData         = false;
   bool  fEvtIsMC            = false;
+  int   fNumEventsProc      = 0;
   int   fNumEvents          = 0;
   int   fNumHits[3]         = {};
   int   fNumHitsUntracked[3]= {};
@@ -845,6 +879,8 @@ class BlipAna : public art::EDAnalyzer
   // --- Neutrino selection tools
   using ProxyPfpColl_t = selection::ProxyPfpColl_t;
   using ProxyPfpElem_t = selection::ProxyPfpElem_t;
+  using ProxyClusColl_t = selection::ProxyClusColl_t;
+  using ProxyCaloColl_t = selection::ProxyCaloColl_t;
   art::InputTag fPFPproducer;
   art::InputTag fCLSproducer; // cluster associated to PFP
   art::InputTag fSLCproducer; // slice associated to PFP
@@ -852,9 +888,13 @@ class BlipAna : public art::EDAnalyzer
   art::InputTag fSHRproducer; // shower associated to PFP
   art::InputTag fVTXproducer; // vertex associated to PFP
   art::InputTag fPCAproducer; // PCAxis associated to PFP
+  art::InputTag fCALOproducer;
   art::InputTag fMCTproducer;
   art::InputTag fTRKproducer;
-  
+  art::InputTag fCRTVeto;
+  art::InputTag fCRTTrkMatch;
+  bool fRecalibrateHits;
+
   void    BuildPFPMap(const ProxyPfpColl_t&);
   void    AddDaughters(const ProxyPfpElem_t &pfp_pxy,
                     const ProxyPfpColl_t &pfp_pxy_col,
@@ -866,6 +906,13 @@ class BlipAna : public art::EDAnalyzer
   // selection tool
   //std::vector<std::unique_ptr<::analysis::AnalysisToolBase>>    _analysisToolsVec;
   //std::vector<std::unique_ptr<::selection::SelectionToolBase>>  _selectionToolsVec;
+
+  // PID Tools
+  nuselection::LLRPID llr_pid_calculator;
+  nuselection::ProtonMuonLookUpParameters protonmuon_parameters;
+  nuselection::CorrectionLookUpParameters correction_parameters;
+  
+  int fNumNuMuCCInclusive = 0;
 
 
   // --- Histograms ---
@@ -1185,17 +1232,32 @@ BlipAna::BlipAna(fhicl::ParameterSet const& pset) :
   fSavePlaneInfo  = pset.get<std::vector<bool>>     ("SavePlaneInfo",   {true,true,true});
   fDebugMode      = pset.get<bool>                  ("DebugMode",       false);
   fDoACPTrkCalib  = pset.get<bool>                  ("DoACPTrkCalib",   true);
+  fSaveSCECorrLoc = pset.get<bool>                  ("SaveSCECorrLoc",  false);
+  fSaveCorrEnergy = pset.get<bool>                  ("SaveCorrEnergy",  false);
 
+  fApplyNuSelection         = pset.get<bool>      ("ApplyNuSelection",          false);
+  fNuSelTopologicalScore    = pset.get<float>     ("NuSel_TopologicalScore",    0.10);
+  fNuSelCRTPE               = pset.get<float>     ("NuSel_CRTPE",               100);
+  fNuSelClosestNuCosmicDist = pset.get<float>     ("NuSel_ClosestNuCosmicDist", 5);
+  fNuMuCC_TrkDist           = pset.get<float>     ("NuSel_NuMuCC_TrkDist",      4);
+  fNuMuCC_TrkPIDScore       = pset.get<float>     ("NuSel_NuMuCC_TrkPIDScore",  0.2);
+  fNuMuCC_TrkLength         = pset.get<float>     ("NuSel_NuMuCC_TrkLength",    10);
+  fNuMuCC_TrkScore          = pset.get<float>     ("NuSel_NuMuCC_TrkScore",     0.8);
+  fNuMuCC_MCSQuality        = pset.get<std::vector<float>>("NuSel_NuMuCC_MCSQuality", {-0.5,0.5});
 
   fPFPproducer = pset.get<art::InputTag>("PFPproducer","pandora");
   fSHRproducer = pset.get<art::InputTag>("SHRproducer","shrreco3d");
   fHITproducer = pset.get<art::InputTag>("HITproducer","pandora");
   fVTXproducer = pset.get<art::InputTag>("VTXproducer","pandora");
   fPCAproducer = pset.get<art::InputTag>("PCAproducer","pandora");
+  fCALOproducer= pset.get<art::InputTag>("CALOproducer","pandoracali");
   fCLSproducer = pset.get<art::InputTag>("CLSproducer","pandora");
   fSLCproducer = pset.get<art::InputTag>("SLCproducer","pandora");
   fMCTproducer = pset.get<art::InputTag>("MCTproducer","generator");
   fTRKproducer = pset.get<art::InputTag>("TRKproducer","pandora");
+  fCRTVeto     = pset.get<art::InputTag>("CRTproducer","crtveto");  // default is none
+  fCRTTrkMatch = pset.get<art::InputTag>("CRTTrkMatch","crttrackmatch");
+  fRecalibrateHits = pset.get<bool>("RecalibrateHits", true);
 
   // data tree object
   fData = new BlipAnaTreeDataStruct();
@@ -1220,7 +1282,30 @@ BlipAna::BlipAna(fhicl::ParameterSet const& pset) :
 
   // initialize histograms
   InitializeHistograms();
- 
+
+  // set dedx pdf parameters
+  llr_pid_calculator.set_dedx_binning(0, protonmuon_parameters.dedx_edges_pl_0);
+  llr_pid_calculator.set_par_binning(0, protonmuon_parameters.parameters_edges_pl_0);
+  llr_pid_calculator.set_lookup_tables(0, protonmuon_parameters.dedx_pdf_pl_0);
+  llr_pid_calculator.set_dedx_binning(1, protonmuon_parameters.dedx_edges_pl_1);
+  llr_pid_calculator.set_par_binning(1, protonmuon_parameters.parameters_edges_pl_1);
+  llr_pid_calculator.set_lookup_tables(1, protonmuon_parameters.dedx_pdf_pl_1);
+  llr_pid_calculator.set_dedx_binning(2, protonmuon_parameters.dedx_edges_pl_2);
+  llr_pid_calculator.set_par_binning(2, protonmuon_parameters.parameters_edges_pl_2);
+  llr_pid_calculator.set_lookup_tables(2, protonmuon_parameters.dedx_pdf_pl_2);
+  
+  // set correction parameters
+  if (fRecalibrateHits)
+  {
+    llr_pid_calculator.set_corr_par_binning(0, correction_parameters.parameter_correction_edges_pl_0);
+    llr_pid_calculator.set_correction_tables(0, correction_parameters.correction_table_pl_0);
+    llr_pid_calculator.set_corr_par_binning(1, correction_parameters.parameter_correction_edges_pl_1);
+    llr_pid_calculator.set_correction_tables(1, correction_parameters.correction_table_pl_1);
+    llr_pid_calculator.set_corr_par_binning(2, correction_parameters.parameter_correction_edges_pl_2);
+    llr_pid_calculator.set_correction_tables(2, correction_parameters.correction_table_pl_2);
+  }
+
+
   /*
   // configure and construct Analysis Tool
   auto const tool_psets = pset.get<fhicl::ParameterSet>("NuAnalysisTools");
@@ -1302,7 +1387,7 @@ void BlipAna::analyze(const art::Event& evt)
   fData->run        = evt.id().run();
   fData->subrun     = evt.id().subRun();
   fIsRealData       = evt.isRealData();
-  fNumEvents++;
+  fNumEventsProc++;
   
   // Get timestamp
   unsigned long long int tsval = evt.time().value();
@@ -1317,11 +1402,428 @@ void BlipAna::analyze(const art::Event& evt)
   
   auto const* detProp   = lar::providerFrom<detinfo::DetectorPropertiesService>();
   auto const& SCE       = lar::providerFrom<spacecharge::SpaceChargeService>();
-  auto const& tpcCalib  = art::ServiceHandle<lariov::TPCEnergyCalibService>()->GetProvider();
+  //auto const& tpcCalib  = art::ServiceHandle<lariov::TPCEnergyCalibService>()->GetProvider();
   
   
 
 
+
+
+  
+  //=======================================
+  // Get data products for this event
+  //========================================
+  
+  /*
+  std::cout<<"Checking particle inventory service...\n";
+  art::ServiceHandle<cheat::ParticleInventoryService> pi_serv;
+  //pi_serv->Rebuild(evt);
+  std::set<int> trackIDs = pi_serv->GetSetOfTrackIds();
+  const sim::ParticleList& plistTest = pi_serv->ParticleList();
+  std::cout<<trackIDs.size()<<"\n";
+  std::cout<<plistTest.size()<<"\n";
+  */
+  
+  // -- MCTruth 
+  art::Handle< std::vector<simb::MCTruth> > truthHandle;
+  std::vector<art::Ptr<simb::MCTruth> > truthlist;
+  if (evt.getByLabel("generator",truthHandle))
+    art::fill_ptr_vector(truthlist, truthHandle);
+
+  // -- G4 particles
+  art::Handle< std::vector<simb::MCParticle> > pHandle;
+  std::vector<art::Ptr<simb::MCParticle> > plist;
+  if (evt.getByLabel("largeant",pHandle))
+    art::fill_ptr_vector(plist, pHandle);
+  
+  // -- hits (from input module)
+  art::Handle< std::vector<recob::Hit> > hitHandle;
+  std::vector<art::Ptr<recob::Hit> > hitlist;
+  if (evt.getByLabel(fHitProducer,hitHandle))
+    art::fill_ptr_vector(hitlist, hitHandle);
+
+  // -- tracks
+  art::Handle< std::vector<recob::Track> > tracklistHandle;
+  std::vector<art::Ptr<recob::Track> > tracklist;
+  if (evt.getByLabel(fTrkProducer,tracklistHandle))
+    art::fill_ptr_vector(tracklist, tracklistHandle);
+ 
+  // Resize data struct objects
+  //fData->nhits      = (int)hitlist.size();
+  fData->nparts     = std::min((int)plist.size(),(int)kMaxG4);
+  fData->ntrks      = (int)tracklist.size();
+  fData->badchans   = fBlipAlg->EvtBadChanCount;
+  fData->Resize();
+ 
+  // flag this data as MC
+  fEvtIsMC = ( plist.size()>0 );
+  
+  //std::cout<<"Retrieved "<<hitlist.size()<<" hits from "<<fHitProducer<<"\n";
+  //std::cout<<"Retrieved "<<tracklist.size()<<" tracks from "<<fTrkProducer<<"\n";
+  
+  
+  //====================================
+  // Save track information
+  //====================================
+  //std::cout<<"Looping over tracks...\n";
+  std::vector<recob::Track> cosmiclike_tracks;
+  std::map<int,bool> map_trkid_isMIP;
+  std::map<int,float> map_trkid_length;
+  int trks_100cm[2] = {0, 0};
+  fData->longtrks=0;
+  for(size_t i=0; i<tracklist.size(); i++){
+    auto& trk = tracklist[i];
+    const auto& startPt = trk->Vertex();
+    const auto& endPt   = trk->End();
+    bool isMC = fBlipAlg->map_trkid_isMC[trk->ID()];
+    fData->trk_isMC[i]  = isMC;
+    fData->trk_g4id[i]  = fBlipAlg->map_trkid_g4id[trk->ID()];
+    fData->trk_id[i]    = trk->ID();
+    fData->trk_npts[i]  = trk->NumberTrajectoryPoints();
+    fData->trk_length[i]= trk->Length();
+    fData->trk_startx[i]= startPt.X();
+    fData->trk_starty[i]= startPt.Y();
+    fData->trk_startz[i]= startPt.Z();
+    fData->trk_endx[i]  = endPt.X();
+    fData->trk_endy[i]  = endPt.Y();
+    fData->trk_endz[i]  = endPt.Z();
+    fData->trk_startd[i]= BlipUtils::DistToBoundary(startPt);
+    fData->trk_endd[i]  = BlipUtils::DistToBoundary(endPt);
+    h_trk_length  ->Fill(trk->Length());
+    float dX = fabs(startPt.X() - endPt.X());
+    float dY = fabs(startPt.Y() - endPt.Y());
+    h_trk_xspan   ->Fill( dX );
+    h_trk_yspan   ->Fill( dY );
+    map_trkid_length[trk->ID()] = trk->Length();
+    map_trkid_isMIP[trk->ID()]  = (trk->Length()>100) ? true : false;
+    // count the number of non-blippy tracks to use
+    // as a metric for cosmic activity in event
+    if( trk->Length() > 5 ) fData->longtrks++;
+    
+    if( trk->Length() > 100 ) trks_100cm[(int)isMC]++;
+    // TODO:
+    // identify "cosmic"-looking tracks that pierce
+    // the top of the TPC ceiling at Y = + 117cm
+    //float ytop = 117;
+    //bool isStartAtBnd = ( fabs(startPt.Y()-ytop) < 2. );
+    //bool isEndAtTop   = ( fabs(endPt.Y()  -ytop) < 2. );
+    //if( (isStartAtTop || isEndAtTop) && dY > 20. ) {
+    //}
+    
+    // Find cosmic-like tracks based solely on endpoints
+    // Not relying on 'X' due to out-of-time tracks
+    bool startAtEdge = false;
+    bool endAtEdge = false;
+    //if( startPt.X() < 5 || startPt.X() > 251 )    startAtEdge = true;
+    if( startPt.Y() < -112 || startPt.Y() < 112 ) startAtEdge = true;
+    if( startPt.Z() < 10 || startPt.Z() > 1025 )  startAtEdge = true;
+    //if( endPt.X() < 5 || endPt.X() > 251 )    endAtEdge = true;
+    if( endPt.Y() < -112 || endPt.Y() < 112 ) endAtEdge = true;
+    if( endPt.Z() < 10 || endPt.Z() > 1025 )  endAtEdge = true;
+    if( startAtEdge && endAtEdge && dY > 20 ) cosmiclike_tracks.push_back(*trk);
+
+  }
+  
+  h_trks_100cm[0]->Fill(trks_100cm[0]);
+  h_trks_100cm[1]->Fill(trks_100cm[1]);
+
+
+
+  //=======================================================
+  // Check if the event contains neutrino information
+  // (much of this copied from ubana/searchingfornues)
+  //=======================================================
+
+  // Need to implement inclusive numuCC selection.
+  // From DocDB-32933-v6, Table 13.
+  //    PRESELECTION:
+  //    - nslice = 1
+  //    - Fid vol cut on SCE vertex: X (5-251), Y (-110 to 110), Z (20 to 986, but NOT 675 to 775)
+  //    - Topological score > 0.06
+  //    - cosmic rejection
+  //        - CRT veto != 1 OR crthitpe < 100
+  //        - closestNuCosmicDist > 5 cm
+  //    MUON TRACK:
+  //    - same fiducial cuts as above but on start/end point of track
+  //    - trk-to-vtx distance < 4 cm
+  //    - trk llr pid score > 0.2
+  //    - trk length > 10 cm
+  //    - trk score > 0.8
+  //    o reconstruction quality: -0.5 < MCS quality < 0.5 (excluding this one for now)
+  
+  //bool crtVeto  = false;
+  float crtpe   = 0;
+
+  //---------------------------------------
+  // First get CRT information
+  std::vector<recob::Track> crt_tracks;
+  GetCRTInfo(evt,crtpe,crt_tracks);
+  //std::cout<<"CRTVeto? "<<crtVeto<<"... PE: "<<crtpe<<", There were "<<crt_tracks.size()<<" CRT tracks\n";
+  fData->nu_crt_pe = crtpe;
+
+  
+  //---------------------------------------
+  // Now loop through PFPs 
+
+  // -- PFPs
+  art::Handle< std::vector<recob::PFParticle> > pfpHandle;
+  std::vector<art::Ptr<recob::PFParticle> > pfplist;
+  if (evt.getByLabel(fPFPproducer,pfpHandle))
+    art::fill_ptr_vector(pfplist, pfpHandle);
+ 
+  // -- associated tracks/vertex
+  art::FindManyP<recob::Track> fmtrk_from_pfp(pfpHandle,evt,fTrkProducer);
+  
+  if( pfplist.size() ) {
+    
+    float bestNuScore = 0;
+    
+    // grab PFParticles in event
+    ProxyPfpColl_t const &pfp_proxy = proxy::getCollection<std::vector<recob::PFParticle>>(evt, fPFPproducer,
+												    proxy::withAssociated<larpandoraobj::PFParticleMetadata>(fPFPproducer),
+												    proxy::withAssociated<recob::Cluster>(fCLSproducer),
+												    proxy::withAssociated<recob::Slice>(fSLCproducer),
+												    proxy::withAssociated<recob::Track>(fTRKproducer),
+												    proxy::withAssociated<recob::Vertex>(fVTXproducer),
+												    proxy::withAssociated<recob::PCAxis>(fPCAproducer),
+												    proxy::withAssociated<recob::Shower>(fSHRproducer),
+												    proxy::withAssociated<recob::SpacePoint>(fPFPproducer));
+    BuildPFPMap(pfp_proxy);
+
+    // Initialize Backtracker vector and associated MC Particles for Event
+    std::vector<nuselection::BtPart> btparts_v;
+    std::unique_ptr<art::FindManyP<simb::MCParticle, anab::BackTrackerHitMatchingData>> assocMCPart;   
+ 
+    // loop through PFParticles 
+    if( fDebugMode ) std::cout<<"Looping over PFPs for this event...\n";
+    for (const ProxyPfpElem_t &pfp_pxy : pfp_proxy)
+    {
+      int   sliceIndex     = -9;
+      int   isClearCosmic  = 0;
+      int   isNeutrino     = 0;
+      float nuScore        = -9;
+      bool  foundVtx       = false;
+
+      // get metadata for this PFP
+      const auto &pfParticleMetadataList = pfp_pxy.get<larpandoraobj::PFParticleMetadata>();
+      if( !pfp_pxy->IsPrimary() ) continue;
+      if( pfParticleMetadataList.size() != 1 ) continue;
+      
+      const art::Ptr<larpandoraobj::PFParticleMetadata> &pfParticleMetadata(pfParticleMetadataList.at(0));
+      auto pfParticlePropertiesMap = pfParticleMetadata->GetPropertiesMap();
+      if( pfParticlePropertiesMap.empty() ) continue;
+      for (std::map<std::string, float>::const_iterator it = pfParticlePropertiesMap.begin(); it != pfParticlePropertiesMap.end(); ++it){
+        //std::cout<<"      "<<it->first<<": "<<it->second<<"\n";
+        if( it->first == "SliceIndex"   ) sliceIndex    = it->second;
+        if( it->first == "IsClearCosmic") isClearCosmic = it->second;
+        if( it->first == "IsNeutrino"   ) isNeutrino    = it->second;
+        if( it->first == "NuScore"      ) nuScore       = it->second;
+      }
+      
+      if( sliceIndex < 0 ) continue;
+      if( isClearCosmic )  continue;
+      
+      
+      // Get vertex info
+      TVector3 nuvtx;
+      auto vtx = pfp_pxy.get<recob::Vertex>();
+      if (vtx.size() == 1){
+        foundVtx = true;
+        double xyz[3] = {};
+        float xyzSCE[3] = {};
+        vtx.at(0)->XYZ(xyz); nuvtx = TVector3(xyz[0], xyz[1], xyz[2]);
+        nuselection::ApplySCECorrectionXYZ(nuvtx.X(),nuvtx.Y(),nuvtx.Z(),xyzSCE);
+        nuvtx.SetXYZ(xyzSCE[0],xyzSCE[1],xyzSCE[2]);
+      } else { 
+        //std::cout << "ERROR. Found neutrino PFP w/ != 1 associated vertices..." << std::endl;
+      }
+    
+      if( !foundVtx ) continue;
+      
+      
+      
+      
+      
+      // Ok, now we have a neutrino vertex; check more stringent cuts
+      // Boundaries from neutronID paper and NuMuCCInclusive cut from https://arxiv.org/pdf/2403.19574:
+      bool isInFV = BlipUtils::IsPointInFV( nuvtx, 
+        21.5, 234.85, // x-bounds
+        -95,  95,     // y-bounds
+        21.5, 966.8 ); // z-bounds
+      //bool isInFV = BlipUtils::IsPointInFV_InclusiveNuMuCC( nuvtx );
+      if( nuvtx.Z() > 675 && nuvtx.Z() < 775 ) isInFV = false;
+    
+      // Evaluate closest approach for CRT tracks
+      float ccd = 9999;
+      //std::cout<<"Checking "<<crt_tracks.size()<<" CRT-tagged tracks\n";
+      for(auto& trk : crt_tracks){
+        TVector3 v1(trk.Start().X(),trk.Start().Y(),trk.Start().Z());
+        TVector3 v2(trk.End().X(),trk.End().Y(),trk.End().Z());
+        float ds = BlipUtils::DistToLine(v1,v2,nuvtx);
+        if( ds < ccd ) ccd = ds;
+      }
+      
+      // Evalulate for cosmic-like
+      //std::cout<<"Checking "<<cosmiclike_tracks.size()<<" cosmic-like tracks\n";
+      for(auto& trk : cosmiclike_tracks){
+        TVector3 v1(trk.Start().X(),trk.Start().Y(),trk.Start().Z());
+        TVector3 v2(trk.End().X(),trk.End().Y(),trk.End().Z());
+        float ds = BlipUtils::DistToLine(v1,v2,nuvtx);
+        if( ds < ccd ) ccd = ds;
+      }
+      
+   
+      if( nuScore < bestNuScore ) continue;
+      bestNuScore = nuScore;
+      fData->nu_pfp_pdg     = pfp_pxy->PdgCode();
+      fData->nu_reco_vtx_x  = nuvtx.X();
+      fData->nu_reco_vtx_y  = nuvtx.Y();
+      fData->nu_reco_vtx_z  = nuvtx.Z();
+      fData->nu_isNeutrino  = isNeutrino;
+      fData->nu_nuscore     = nuScore;
+      fData->nu_crt_closestCosDist = ccd;
+      
+
+      // Now check for further numuCC-like cuts related to the muon track
+      if( !isInFV )                          continue;
+      if( crtpe > fNuSelCRTPE )              continue;
+      if( nuScore < fNuSelTopologicalScore ) continue;
+      if( ccd < fNuSelClosestNuCosmicDist )  continue;
+      
+
+      //selectNu = true;
+      //std::cout<<"  ----- New primary PFP (not obvious cosmic), score = "<<nuScore<<" -----\n";
+      //std::cout<<"  *** Passed preselection ***\n";
+      // Now muon track selection
+      // collect PFParticle hierarchy originating from this neutrino candidate
+      std::vector<ProxyPfpElem_t> slice_pfp_v;
+      AddDaughters(pfp_pxy, pfp_proxy, slice_pfp_v);
+      //std::cout << "  This slice has " << slice_pfp_v.size() << " daughter PFParticles" << std::endl;
+      for (auto pfp : slice_pfp_v)
+      {
+        auto const &trk_v = pfp.get<recob::Track>();
+        if( trk_v.size() != 1 ) continue;
+        float score = nuselection::GetTrackShowerScore(pfp);
+        auto trk = trk_v.at(0);
+        //std::cout<<"  found track with score "<<score<<"    length "<<trk->Length()<<"\n";
+        
+        // Track ID
+        //std::cout<<"    - track ID cuts\n";
+        if( trk->Length() < fNuMuCC_TrkLength ) continue;
+        if( score < fNuMuCC_TrkScore ) continue;
+        
+        // Containment
+        TVector3 trkStart(trk->Start().X(),trk->Start().Y(),trk->Start().Z());
+        TVector3 trkEnd(trk->End().X(),trk->End().Y(),trk->End().Z());
+        bool startInFV = BlipUtils::IsPointInFV(trkStart,
+          10.,    246.35, // x-bounds
+          -106.5, 106.5,  // y-bounds
+          10.,    1026.80); // z-bounds
+        bool endInFV   = BlipUtils::IsPointInFV(trkEnd,
+          10.,    246.35, // x-bounds
+          -106.5, 106.5,  // y-bounds
+          10.,    1026.80); // z-bounds
+        //std::cout<<"    - Starts in FV? "<<startInFV<<"   --> ends in FV? "<<endInFV<<"\n";
+        if( !(startInFV && endInFV) ) continue;
+
+        // Cosmic rejection cut
+        float ds = std::min( (trkStart-nuvtx).Mag(), (trkEnd-nuvtx).Mag() );
+        //std::cout<<"    - cosmic rejection cut, "<<ds<<"\n";
+        if( ds > fNuMuCC_TrkDist ) continue;
+       
+        
+        ProxyClusColl_t const &clus_proxy = proxy::getCollection<std::vector<recob::Cluster>>(evt, fCLSproducer, proxy::withAssociated<recob::Hit>(fCLSproducer));
+        ProxyCaloColl_t const &calo_proxy = proxy::getCollection<std::vector<recob::Track>>(evt, fTRKproducer, proxy::withAssociated<anab::Calorimetry>(fCALOproducer)); 
+        
+        auto calo_v = calo_proxy[trk.key()].get<anab::Calorimetry>(); 
+        //std::cout<<"    - cal objects "<<calo_v.size()<<" *************************************************************\n"; 
+        // use score from plane with most points
+        float best_llr_pid_score = -999;
+        int   highest_pts = 0;
+        for (auto const &calo : calo_v)
+        {
+          auto const &plane = calo->PlaneID().Plane;
+          //std::cout<<"    Checking plane "<<plane<<"\n";
+          if( plane > 2 ) continue;
+          int npts = calo->dEdx().size();
+          //std::cout<<"    pts: "<<npts<<"\n";
+          //auto const &dedx_values = calo->dEdx();
+          auto const &dqdx_values = calo->dQdx();
+          auto const &rr = calo->ResidualRange();
+          auto const &pitch = calo->TrkPitchVec();
+          auto const& xyz_v = calo->XYZ();
+          std::vector<std::vector<float>> par_values;
+          par_values.push_back(rr);
+          par_values.push_back(pitch);
+          std::vector<float> dqdx_values_corrected, dedx_values_corrected;
+          if( fIsRealData || !fRecalibrateHits ) {
+            dqdx_values_corrected = dqdx_values;
+          } else {
+            dqdx_values_corrected = llr_pid_calculator.correct_many_hits_one_plane(calo, trk.value(), assocMCPart, fRecalibrateHits, 0.1, false);
+          }
+
+          for (size_t i = 0; i < dqdx_values_corrected.size(); i++)
+          {
+            float q0 = dqdx_values_corrected[i];
+            float q = fBlipAlg->fCaloAlg->ElectronsFromADCArea(q0,plane);
+            dedx_values_corrected.push_back(nuselection::ModBoxCorrection(q, xyz_v[i].X(), xyz_v[i].Y(), xyz_v[i].Z()));
+          }
+          float llr_pid = llr_pid_calculator.LLR_many_hits_one_plane(dedx_values_corrected, par_values, plane);
+          float llr_pid_score = atan( llr_pid / 100.) * 2 / 3.14159266;
+          //std::cout<<"LLR PID score plane "<<plane<<": "<<llr_pid_score<<"\n";
+          if( npts > highest_pts ) {
+            highest_pts = npts;
+            best_llr_pid_score = llr_pid_score;
+          }
+        }
+        //std::cout<<"BEST score: "<<best_llr_pid_score<<"\n";
+        if( best_llr_pid_score < fNuMuCC_TrkPIDScore ) continue;
+        fData->nu_sel_mucc = true;
+        // Finally, MCS quality (skip for now?)
+
+
+      } // for all PFParticles in the slice
+      
+
+        
+        // run analysis on this slice
+       // for (size_t i = 0; i < _analysisToolsVec.size(); i++) {
+       //   bool fIsData = !fEvtIsMC;
+       //   _analysisToolsVec[i]->analyzeSlice(evt, slice_pfp_v, fIsData, true);
+       // }
+
+        //float* fData->selTree->GetBranch( 
+  
+        /*
+        float* bdtscore = (float*) _tree->GetBranch(fBDT_branch.c_str())->GetAddress();
+        std::cout << "bdtscore=" << *bdtscore << std::endl;
+        keepEvent = keepEvent && ( (*bdtscore)<fBDT_cut ); 
+        */
+
+    }//end loop over PFPs
+    
+    if( fData->nu_sel_mucc ){ 
+      //std::cout<<"FOUND THE FRIGGIN NUMUCC CAND!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+      fNumNuMuCCInclusive++;
+    }
+    
+  }//endif non-zero PFPlist
+  
+  
+  
+  // Tell us what's going on!
+  if( fNumEventsProc < 200 || (fNumEventsProc % 100) == 0 ) {
+  std::cout<<"\n"
+  <<"=========== BlipAna =========================\n"
+  <<"Event "<<evt.id().event()<<" / run "<<evt.id().run()<<"; total: "<<fNumEventsProc<<"\n";
+  if( fApplyNuSelection ) 
+  std::cout<<"Number of NuMuCC candidates saved: "<<fNumNuMuCCInclusive<<"\n";
+  }
+  
+  if( fApplyNuSelection && !fData->nu_sel_mucc ) return;
+  
+  
+  
   //===========================================
   // Define vectors of reconstructed data 
   // (hits, 2D hit clusters, 3D blips)
@@ -1399,224 +1901,6 @@ void BlipAna::analyze(const art::Event& evt)
   //    * HitClust is just a cluster of hits on a specific plane; these are 
   //      used to create 3D blips by plane-matching.
   //
-
-
-  
-  //=======================================
-  // Get data products for this event
-  //========================================
-  
-  /*
-  std::cout<<"Checking particle inventory service...\n";
-  art::ServiceHandle<cheat::ParticleInventoryService> pi_serv;
-  //pi_serv->Rebuild(evt);
-  std::set<int> trackIDs = pi_serv->GetSetOfTrackIds();
-  const sim::ParticleList& plistTest = pi_serv->ParticleList();
-  std::cout<<trackIDs.size()<<"\n";
-  std::cout<<plistTest.size()<<"\n";
-  */
-  
-  // -- MCTruth 
-  art::Handle< std::vector<simb::MCTruth> > truthHandle;
-  std::vector<art::Ptr<simb::MCTruth> > truthlist;
-  if (evt.getByLabel("generator",truthHandle))
-    art::fill_ptr_vector(truthlist, truthHandle);
-
-  // -- G4 particles
-  art::Handle< std::vector<simb::MCParticle> > pHandle;
-  std::vector<art::Ptr<simb::MCParticle> > plist;
-  if (evt.getByLabel("largeant",pHandle))
-    art::fill_ptr_vector(plist, pHandle);
-  
-  // -- hits (from input module)
-  art::Handle< std::vector<recob::Hit> > hitHandle;
-  std::vector<art::Ptr<recob::Hit> > hitlist;
-  if (evt.getByLabel(fHitProducer,hitHandle))
-    art::fill_ptr_vector(hitlist, hitHandle);
-
-  // -- tracks
-  art::Handle< std::vector<recob::Track> > tracklistHandle;
-  std::vector<art::Ptr<recob::Track> > tracklist;
-  if (evt.getByLabel(fTrkProducer,tracklistHandle))
-    art::fill_ptr_vector(tracklist, tracklistHandle);
- 
-  // Resize data struct objects
-  //fData->nhits      = (int)hitlist.size();
-  fData->nparts     = std::min((int)plist.size(),(int)kMaxG4);
-  fData->ntrks      = (int)tracklist.size();
-  fData->badchans   = fBlipAlg->EvtBadChanCount;
-  fData->Resize();
- 
-  // flag this data as MC
-  fEvtIsMC = ( plist.size()>0 );
-  
-  //std::cout<<"Retrieved "<<hitlist.size()<<" hits from "<<fHitProducer<<"\n";
-  //std::cout<<"Retrieved "<<tracklist.size()<<" tracks from "<<fTrkProducer<<"\n";
-  
-  //=======================================================
-  // Check if the event contains neutrino information
-  // (much of this copied from ubana/searchingfornues)
-  //=======================================================
-
-  // -- PFPs
-  art::Handle< std::vector<recob::PFParticle> > pfpHandle;
-  std::vector<art::Ptr<recob::PFParticle> > pfplist;
-  if (evt.getByLabel(fPFPproducer,pfpHandle))
-    art::fill_ptr_vector(pfplist, pfpHandle);
- 
-  // -- associated tracks/vertex
-  art::FindManyP<recob::Track> fmtrk_from_pfp(pfpHandle,evt,fTrkProducer);
-
-
-  bool foundNu = false;
-  
-  if( pfplist.size() ) {
-    
-    // grab PFParticles in event
-    ProxyPfpColl_t const &pfp_proxy = proxy::getCollection<std::vector<recob::PFParticle>>(evt, fPFPproducer,
-												    proxy::withAssociated<larpandoraobj::PFParticleMetadata>(fPFPproducer),
-												    proxy::withAssociated<recob::Cluster>(fCLSproducer),
-												    proxy::withAssociated<recob::Slice>(fSLCproducer),
-												    proxy::withAssociated<recob::Track>(fTRKproducer),
-												    proxy::withAssociated<recob::Vertex>(fVTXproducer),
-												    proxy::withAssociated<recob::PCAxis>(fPCAproducer),
-												    proxy::withAssociated<recob::Shower>(fSHRproducer),
-												    proxy::withAssociated<recob::SpacePoint>(fPFPproducer));
-  
-    BuildPFPMap(pfp_proxy);
-   
-
-    // loop through PFParticles
-    for (const ProxyPfpElem_t &pfp_pxy : pfp_proxy)
-    {
-      // get metadata for this PFP
-      const auto &pfParticleMetadataList = pfp_pxy.get<larpandoraobj::PFParticleMetadata>();
-
-      //  find neutrino candidate
-      if (pfp_pxy->IsPrimary() == false) continue;
-      auto PDG = fabs(pfp_pxy->PdgCode());
-      fData->nu_pfp_pdg=PDG;
-      if ( (PDG == 12) || (PDG == 14) ) 
-      {
-        foundNu = true;
-        std::cout<<"Found neutrino PFP\n";
-        if (pfParticleMetadataList.size() != 0)
-        {
-          for (unsigned int j = 0; j < pfParticleMetadataList.size(); ++j)
-          {
-            const art::Ptr<larpandoraobj::PFParticleMetadata> &pfParticleMetadata(pfParticleMetadataList.at(j));
-            auto pfParticlePropertiesMap = pfParticleMetadata->GetPropertiesMap();
-            if (!pfParticlePropertiesMap.empty())
-            {
-              for (std::map<std::string, float>::const_iterator it = pfParticlePropertiesMap.begin(); it != pfParticlePropertiesMap.end(); ++it)
-              {
-                if( it->first == "IsNeutrino" ) fData->nu_isNeutrino  = it->second;
-                //if( it->first == "NuScore"    ) fData->nu_nuscore     = it->second;
-                if( it->first == "NuScore"    ) fData->nu_nuscore.push_back(it->second);
-                //if( it->first == "SliceIndex" ) fData->nu_sliceindex  = it->second;
-              }
-            }
-          }
-        } // if PFP metadata exists!
-
-        // Get vertex info
-        double xyz[3] = {}; 
-        auto vtx = pfp_pxy.get<recob::Vertex>();
-        if (vtx.size() == 1)
-        {
-          // save vertex to array
-          vtx.at(0)->XYZ(xyz);
-          auto nuvtx = TVector3(xyz[0], xyz[1], xyz[2]);
-          float _reco_nu_vtx_sce[3];
-          nuselection::ApplySCECorrectionXYZ(nuvtx.X(),nuvtx.Y(),nuvtx.Z(), _reco_nu_vtx_sce);
-          fData->nu_reco_vtx_x = _reco_nu_vtx_sce[0];
-          fData->nu_reco_vtx_y = _reco_nu_vtx_sce[1];
-          fData->nu_reco_vtx_z = _reco_nu_vtx_sce[2];
-        }
-        else
-        {
-          std::cout << "ERROR. Found neutrino PFP w/ != 1 associated vertices..." << std::endl;
-        }
-
-        // collect PFParticle hierarchy originating from this neutrino candidate
-        std::vector<ProxyPfpElem_t> slice_pfp_v;
-        AddDaughters(pfp_pxy, pfp_proxy, slice_pfp_v);
-        //std::cout << "This slice has " << slice_pfp_v.size() << " daughter PFParticles" << std::endl;
-      
-        // create list of tracks and showers associated to this slice
-        std::vector<art::Ptr<recob::Track>> sliceTracks;
-        std::vector<art::Ptr<recob::Shower>> sliceShowers;
-        std::vector<float>  trkscore_v;
-        std::vector<int>    trkid_v;
-        std::vector<float>  trkstartx_v;
-        std::vector<float>  trkstarty_v;
-        std::vector<float>  trkstartz_v;
-        std::vector<float>  shwrscore_v;
-
-        for (auto pfp : slice_pfp_v)
-        {
-          auto const &trk_v = pfp.get<recob::Track>();
-          auto const &shr_v = pfp.get<recob::Shower>();
-          float score = nuselection::GetTrackShowerScore(pfp);
-          
-          if( trk_v.size() == 1 ) {
-            auto trk = trk_v.at(0); 
-            sliceTracks.push_back(trk);
-            trkid_v   .push_back(trk->ID());
-            trkscore_v.push_back(score);
-            trkstartx_v.push_back(trk->Start().X());
-            trkstarty_v.push_back(trk->Start().Y());
-            trkstartz_v.push_back(trk->Start().Z());
-          }
-          if( shr_v.size() == 1 ) {
-            auto shower = shr_v.at(0);
-            sliceShowers.push_back(shower);
-            shwrscore_v.push_back(score);
-          }
-
-        } // for all PFParticles in the slice
-     
-        //std::cout<<"  - "<<trkscore_v.size()<<" tracks\n";
-        //std::cout<<"  - "<<shwrscore_v.size()<<" showers\n";
-        
-        for(size_t itrk = 0; itrk < trkscore_v.size(); itrk++){
-          fData->nu_trk_id    .push_back(trkid_v[itrk]);
-          fData->nu_trk_score .push_back(trkscore_v[itrk]);
-        }
-        for(size_t ishwr = 0; ishwr < shwrscore_v.size(); ishwr++){
-          fData->nu_shwr_score .push_back(shwrscore_v[ishwr]);
-        }
-
-        
-        // run analysis on this slice
-       // for (size_t i = 0; i < _analysisToolsVec.size(); i++) {
-       //   bool fIsData = !fEvtIsMC;
-       //   _analysisToolsVec[i]->analyzeSlice(evt, slice_pfp_v, fIsData, true);
-       // }
-
-        //float* fData->selTree->GetBranch( 
-  
-        /*
-        float* bdtscore = (float*) _tree->GetBranch(fBDT_branch.c_str())->GetAddress();
-        std::cout << "bdtscore=" << *bdtscore << std::endl;
-        keepEvent = keepEvent && ( (*bdtscore)<fBDT_cut ); 
-        */
-
-      }//if PDG of neutrino
-    }//end loop over PFPs
-  }
-  
-  
-  // Tell us what's going on!
-  if( fNumEvents < 200 || (fNumEvents % 100) == 0 ) {
-  std::cout<<"\n"
-  <<"=========== BlipAna =========================\n"
-  <<"Event "<<evt.id().event()<<" / run "<<evt.id().run()<<"; total: "<<fNumEvents<<"\n";
-  std::cout<<"Found "<<pfplist.size()<<" PFPs\n";
-  if( foundNu ) std::cout<<"Found a neutrino PFP\n";
-  }
-  
-  
   
 
   //====================================
@@ -1631,6 +1915,7 @@ void BlipAna::analyze(const art::Event& evt)
   // Check neutrinos in MCTruth
   // (NuanceOffset found through simb::kNuanceOffset)
   //===================================
+  std::cout<<"checking MCTruth info\n";
   if( truthlist.size() > 0 ) {
     auto& nu    = truthlist[0]->GetNeutrino();
     auto& part  = truthlist[0]->GetParticle(0);
@@ -1653,6 +1938,7 @@ void BlipAna::analyze(const art::Event& evt)
   std::map< int, std::vector<int> > map_neutron_gammas;
   std::map< int, std::vector<float> > map_neutron_gammaE;
   std::map<int,int> map_g4trkid_index;
+  std::cout<<"checking MCParticl info\n";
   if( plist.size() ) {
     
     std::vector<blip::ParticleInfo>& pinfo = fBlipAlg->pinfo;
@@ -1766,6 +2052,7 @@ void BlipAna::analyze(const art::Event& evt)
   // Save TrueBlip information
   //====================================
   //std::vector<blip::TrueBlip>& trueblips = fBlipAlg->trueblips;
+  std::cout<<"checking true edeps info\n";
   fData->nedeps = (int)trueblips.size();
   if( trueblips.size() ) {
     if( fDebugMode ) std::cout<<"\nLooping over "<<trueblips.size()<<" true blips / 'edeps':\n";
@@ -1843,56 +2130,6 @@ void BlipAna::analyze(const art::Event& evt)
 
   float driftVelocity = detProp->DriftVelocity(detProp->Efield(),detProp->Temperature());
   
-  //====================================
-  // Save track information
-  //====================================
-  //std::cout<<"Looping over tracks...\n";
-  std::map<int,bool> map_trkid_isMIP;
-  std::map<int,float> map_trkid_length;
-  int trks_100cm[2] = {0, 0};
-  fData->longtrks=0;
-  for(size_t i=0; i<tracklist.size(); i++){
-    auto& trk = tracklist[i];
-    const auto& startPt = trk->Vertex();
-    const auto& endPt   = trk->End();
-    bool isMC = fBlipAlg->map_trkid_isMC[trk->ID()];
-    fData->trk_isMC[i]  = isMC;
-    fData->trk_g4id[i]  = fBlipAlg->map_trkid_g4id[trk->ID()];
-    fData->trk_id[i]    = trk->ID();
-    fData->trk_npts[i]  = trk->NumberTrajectoryPoints();
-    fData->trk_length[i]= trk->Length();
-    fData->trk_startx[i]= startPt.X();
-    fData->trk_starty[i]= startPt.Y();
-    fData->trk_startz[i]= startPt.Z();
-    fData->trk_endx[i]  = endPt.X();
-    fData->trk_endy[i]  = endPt.Y();
-    fData->trk_endz[i]  = endPt.Z();
-    fData->trk_startd[i]= BlipUtils::DistToBoundary(startPt);
-    fData->trk_endd[i]  = BlipUtils::DistToBoundary(endPt);
-    h_trk_length  ->Fill(trk->Length());
-    float dX = fabs(startPt.X() - endPt.X());
-    float dY = fabs(startPt.Y() - endPt.Y());
-    h_trk_xspan   ->Fill( dX );
-    h_trk_yspan   ->Fill( dY );
-    map_trkid_length[trk->ID()] = trk->Length();
-    map_trkid_isMIP[trk->ID()]  = (trk->Length()>100) ? true : false;
-    // count the number of non-blippy tracks to use
-    // as a metric for cosmic activity in event
-    if( trk->Length() > 5 ) fData->longtrks++;
-    
-    if( trk->Length() > 100 ) trks_100cm[(int)isMC]++;
-    // TODO:
-    // identify "cosmic"-looking tracks that pierce
-    // the top of the TPC ceiling at Y = + 117cm
-    //float ytop = 117;
-    //bool isStartAtBnd = ( fabs(startPt.Y()-ytop) < 2. );
-    //bool isEndAtTop   = ( fabs(endPt.Y()  -ytop) < 2. );
-    //if( (isStartAtTop || isEndAtTop) && dY > 20. ) {
-    //}
-  }
-  
-  h_trks_100cm[0]->Fill(trks_100cm[0]);
-  h_trks_100cm[1]->Fill(trks_100cm[1]);
 
     
 
@@ -2326,7 +2563,7 @@ void BlipAna::analyze(const art::Event& evt)
     num_clusts[clust.Plane]++;
     if( clust.isMatched ) num_clusts_pm[clust.Plane]++;
     if( !fSavePlaneInfo[clust.Plane] ) continue;
-   
+    
     // if this clust has an associated "trueblip" ID, find it
     int tbi = clust.EdepID;
     if( tbi >= 0 && tbi < (int)trueblips.size() ) {
@@ -2351,12 +2588,13 @@ void BlipAna::analyze(const art::Event& evt)
       }
     }
     
+    
     if( fDebugMode ) {
       PrintClusterInfo(clust);
       //std::cout<<"Printing hit info for this cluster...\n";
       //for(auto hi : clust.HitIDs ) PrintHitInfo(hitinfo[hi]);
     }
- 
+
     if( !fData->saveClustInfo || fData->nclusts >= kMaxHits ) continue;
     if( fData->saveClustInfo_Blips  && clust.BlipID<0) continue;
     if( fData->saveClustInfo_Truth  && tbi<0        ) continue;
@@ -2435,13 +2673,13 @@ void BlipAna::analyze(const art::Event& evt)
     if( i > kMaxBlips ) break;
     //auto& blp = fBlipAlg->blips[i];
     auto& blp = blips[i];
-    
+   
     // Fill cluster charge 2D histograms
     h_blip_charge   ->Fill(blp.Charge);
     h_blip_charge_YU->Fill( 0.001*blp.clusters[2].Charge, 0.001*blp.clusters[0].Charge );
     h_blip_charge_YV->Fill( 0.001*blp.clusters[2].Charge, 0.001*blp.clusters[1].Charge );
     h_blip_charge_UV->Fill( 0.001*blp.clusters[0].Charge, 0.001*blp.clusters[1].Charge );
-    
+   
     // Select picky (high-quality) blips:
     if(blp.NPlanes == 3 && blp.SigmaYZ < 1.) {
       nblips_picky++;
@@ -2472,15 +2710,9 @@ void BlipAna::analyze(const art::Event& evt)
     if( fData->saveBlipInfo_Truth && !isMC ) continue;
     int ib = fData->nblips;
     fData->nblips++;
-    fData->blip_id[ib]         = i;
+    fData->blip_id[ib]         = (int)i;
     fData->blip_tpc[ib]        = blp.TPC;
     fData->blip_nplanes[ib]    = blp.NPlanes;
-    fData->blip_x[ib]          = blp.Position.X();
-    fData->blip_y[ib]          = blp.Position.Y();
-    fData->blip_z[ib]          = blp.Position.Z();
-    fData->blip_xSCE[ib]       = blp.PositionSCE.X();
-    fData->blip_ySCE[ib]       = blp.PositionSCE.Y();
-    fData->blip_zSCE[ib]       = blp.PositionSCE.Z();
     fData->blip_sigmayz[ib]    = blp.SigmaYZ;
     fData->blip_dx[ib]         = blp.dX;
     fData->blip_dw[ib]        = blp.dYZ;
@@ -2489,17 +2721,30 @@ void BlipAna::analyze(const art::Event& evt)
     fData->blip_proxtrkid[ib]  = blp.ProxTrkID;
     fData->blip_touchtrk[ib]   = (blp.TouchTrkID >= 0 );
     fData->blip_touchtrkid[ib] = blp.TouchTrkID;
+    fData->blip_trkid[ib]      = blp.TrkID;
+    fData->blip_trkidfrac[ib]  = blp.TrkIDFrac;
     fData->blip_incylinder[ib] = blp.inCylinder;
+    if( fSaveSCECorrLoc ) {
+      fData->blip_x[ib]       = blp.PositionSCE.X();
+      fData->blip_y[ib]       = blp.PositionSCE.Y();
+      fData->blip_z[ib]       = blp.PositionSCE.Z();
+    } else {
+      fData->blip_x[ib]       = blp.Position.X();
+      fData->blip_y[ib]       = blp.Position.Y();
+      fData->blip_z[ib]       = blp.Position.Z();
+    }
     fData->blip_charge[ib]     = blp.Charge;
-    fData->blip_energy[ib]     = blp.Energy;
-    fData->blip_energyCorr[ib] = blp.EnergyCorr;
-    fData->blip_yzcorr[ib]     = tpcCalib.YZdqdxCorrection(fCaloPlane,blp.Position.Y(),blp.Position.Z());
+    if( fSaveCorrEnergy ) fData->blip_energy[ib] = blp.EnergyCorr;
+    else                  fData->blip_energy[ib] = blp.Energy;
+    //fData->blip_yzcorr[ib]     = tpcCalib.YZdqdxCorrection(fCaloPlane,blp.Position.Y(),blp.Position.Z());
     for(size_t ipl = 0; ipl<kNplanes; ipl++){
       if( blp.clusters[ipl].NHits <= 0 ) continue;
       //if( map_clustid_index.contains(cl) ) {
       //  cl = map_clustid_index[cl];
         fData->blip_clustid[ipl][ib]    = blp.clusters[ipl].ID;
-        fData->blip_bydeadwire[ipl][i]  = (blp.clusters[ipl].DeadWireSep==0);
+        fData->blip_bydeadwire[ipl][ib] = (blp.clusters[ipl].DeadWireSep==0);
+        fData->blip_nhits[ipl][ib]      = blp.clusters[ipl].NHits;
+        fData->blip_nwires[ipl][ib]     = blp.clusters[ipl].NWires;
       //}
     }
     if( isMC ) {
@@ -2514,7 +2759,7 @@ void BlipAna::analyze(const art::Event& evt)
  
 
   }//endloop over 3D blips
- 
+
   // Fill some more histograms...
   h_nblips->Fill(nblips_total);
   h_nblips_picky->Fill(nblips_picky);
@@ -2532,6 +2777,7 @@ void BlipAna::analyze(const art::Event& evt)
   // Fill TTree
   //====================================
   fData->FillTrees();
+  fNumEvents++;
   //fData->evtTree->Fill();
   //if( fData->saveNuSelTree ) fData->selTree->Fill();
 
@@ -2595,7 +2841,8 @@ void BlipAna::endJob(){
   printf("\n***********************************************\n");
   fBlipAlg->PrintConfig();
   printf("BlipAna Summary\n\n");
-  printf("  Total events                : %i\n",        fNumEvents);
+  printf("  Total events processed      : %i\n",        fNumEventsProc);
+  printf("  Total events analyzed       : %i\n",        fNumEvents);
   printf("  Blips per evt, total        : %.3f\n",      fNum3DBlips/nEvents);
   printf("                 3 planes     : %.3f\n",      fNum3DBlips3Plane/nEvents);
   printf("                 picky        : %.3f\n",      fNum3DBlipsPicky/nEvents);
@@ -2774,6 +3021,30 @@ double BlipAna::Truncate(double input, double base){
   //return input;
 }
 */
+
+
+bool BlipAna::GetCRTInfo(const art::Event& evt, float& pe, std::vector<recob::Track>& crt_tracks){
+  pe = 0;
+  bool veto = false;
+  if (fCRTVeto == "") return veto;
+  try{
+    art::Handle<art::Assns<crt::CRTHit, recob::OpFlash, void>> crtveto_h;
+    evt.getByLabel(fCRTVeto, crtveto_h);
+    if( crtveto_h->size() ) { veto = true; pe = (int)crtveto_h->at(0).first->peshit;}
+  } catch (...) { std::cout<<"No CRT info in file?\n";}
+  
+  try{
+    auto const& handleTrackMatch  = evt.getValidHandle<art::Assns<recob::Track, anab::T0 >>(fCRTTrkMatch);
+    for (auto &trkm : *handleTrackMatch ) {  
+      art::Ptr<recob::Track> t     = trkm.first;
+      //art::Ptr<anab::T0>     time0 = trkm.second;
+      crt_tracks.emplace_back(*t);
+      //t0tags.emplace_back(*time0);
+    }
+  } catch (...) { std::cout<<"Error accessing CRT Track Match metadata\n";}
+  
+  return veto;
+}
 
 
 DEFINE_ART_MODULE(BlipAna)

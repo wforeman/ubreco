@@ -284,6 +284,7 @@ namespace BlipUtils {
         qvec          .push_back(q);
         dqvec         .push_back(dq);
         rmsvec        .push_back(hitinfo.rms);
+        if( hitinfo.trkid >= 0 ) hc.TrkIDs.push_back(hitinfo.trkid);
         if( hitinfo.g4trkid > 0 ) hc.G4IDs.insert(hitinfo.g4trkid);
         if( hitinfo.gof < 0 ) {
           hc.NPulseTrainHits++;
@@ -453,7 +454,29 @@ namespace BlipUtils {
     }
     newblip.Position.SetX(newblip.Time*tick_to_cm);
     newblip.dX = (t_max-t_min) * tick_to_cm;
-    
+   
+    // check all the hits
+    //std::cout<<"Checking all clusters in this particular blip...\n";
+    std::map<int,int> count_trackids;
+    int total_hits = 0;
+    for(auto hc : hcs ) {
+      //std::cout<<"  nhits "<<hc.NHits<<"\n";
+      total_hits += hc.NHits;
+      for(auto trkid : hc.TrkIDs){
+        //std::cout<<"  trkid: "<<trkid<<"\n";
+        count_trackids[trkid]++;
+      }
+    }
+    //std::cout<<"size "<<count_trackids.size()<<"\n";
+    if( count_trackids.size() && total_hits ) {
+      auto it = std::max_element(count_trackids.begin(),count_trackids.end(),
+        [](const std::pair<int, int>& p1, const std::pair<int, int>& p2) {
+        return p1.second < p2.second;});
+      //std::cout<<it->first<<"   --> "<<it->second<<"\n";
+      newblip.TrkID = it->first;
+      newblip.TrkIDFrac = it->second/(float)total_hits;
+    }
+
     // OK, we made it! Flag as "valid" and ship it out.
     newblip.isValid = true;
     return newblip;
@@ -678,7 +701,7 @@ namespace BlipUtils {
     double d = -1;
     double L = (L2-L1).Mag();
     if( projLen > 0 && projLen < L )  d = (b-projLen*n).Mag(); 
-    //else                              d = std::min( (p-L1).Mag(), (p-L2).Mag() );
+    else                              d = std::min( (p-L1).Mag(), (p-L2).Mag() );
     return d;
   }
   
@@ -688,6 +711,7 @@ namespace BlipUtils {
     TVector3 newp(p.X(), p.Y(), 0);
     return DistToLine(newL1,newL2,newp);
   }
+
 
   //===========================================================================
   void GetGeoBoundaries(double& xmin, double& xmax, double& ymin, double& ymax, double&zmin, double& zmax){
@@ -722,9 +746,36 @@ namespace BlipUtils {
     }
     
   }
-  
+ 
+
+
   bool IsPointInAV(TVector3& v, float margin){
     return IsPointInAV(v.X(), v.Y(), v.Z(), margin);
+  }
+  
+
+  //bool IsPointInFV_InclusiveNuMuCC(const TVector3& vec){
+  //  return IsPointInFV_InclusiveNuMuCC( vec.X(), vec.Y(), vec.Z() );
+  //}
+
+  // Use boundaries from neutron paper, and https://arxiv.org/pdf/2403.19574
+  //bool IsPointInFV_InclusiveNuMuCC(float x, float y, float z){
+      //if( x < 5     || x > 251 ) return false;
+      //if( y < -110  || y > 110 ) return false;
+      //if( z < 20    || z > 986 ) return false;
+  //    if( x < 21.5  || x > 234.85 ) return false;
+  //    if( y < -95.0 || y > 95.0 ) return false;
+  //    if( z < 21.5  || z > 966.8 ) return false;
+  //    return true;
+  //}
+
+  bool IsPointInFV(TVector3& v, float x_lo, float x_hi, 
+                                float y_lo, float y_hi, 
+                                float z_lo, float z_hi ) {
+    if( v.X() < x_lo || v.X() > x_hi ) return false;
+    if( v.Y() < y_lo || v.Y() > y_hi ) return false;
+    if( v.Z() < z_lo || v.Z() > z_hi ) return false;
+    return true;
   }
   
   

@@ -75,6 +75,9 @@ namespace BlipUtils {
   void    GetGeoBoundaries(double&,double&,double&,double&,double&,double&);
   bool    IsPointInAV(float,float,float,float margin=0);
   bool    IsPointInAV(TVector3&,float margin=0);
+  //bool    IsPointInFV_InclusiveNuMuCC(float,float,float);
+  //bool    IsPointInFV_InclusiveNuMuCC(const TVector3&);
+  bool    IsPointInFV(TVector3&,float x_lo=0,float x_hi=0, float y_lo=0, float y_hi=0, float z_lo=0, float z_hi=0);
   bool    IsPointAtBnd(float,float,float);
   bool    IsPointAtBnd(TVector3&);
   void    NormalizeHist(TH1D*);

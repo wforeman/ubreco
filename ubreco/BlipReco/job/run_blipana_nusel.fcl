@@ -1,0 +1,14 @@
+#include "run_blipana.fcl"
+
+# Use older database tag due to corrupted entires in v1r4
+services.TPCEnergyCalibService.TPCEnergyCalibProvider.XNormCorrectionProvider.DatabaseRetrievalAlg.DBTag: "v1r1"
+
+physics.analyzers.blipana.SaveClustInfo:        false
+physics.analyzers.blipana.ApplyNuSelection:     true
+physics.analyzers.blipana.ApplyNuMuCCSelection: true
+physics.analyzers.blipana.SaveNuInfo:           true
+physics.analyzers.blipana.SaveHitInfo:          true
+physics.analyzers.blipana.SaveHitInfo_Blips:          true
+physics.analyzers.blipana.SaveHitInfo_Truth:          false
+physics.analyzers.blipana.BlipAlg.SCECorrection:      true
+physics.analyzers.blipana.BlipAlg.LifetimeCorrection: true

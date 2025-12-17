@@ -89,10 +89,10 @@ namespace blip {
     float peakTime      = -999999;
     float driftTime     = -999999;  // [tick]
     float gof           = -9;
-    int   g4trkid       = -9;
+    int   g4trkid       = -99;
     int   g4pdg         = -999;
     int   g4charge      = -999;     // [e-]
-    float g4frac        = -99;      
+    float g4frac        = -9;      
     float g4energy      = -999;     // [MeV]
   };
 
@@ -107,10 +107,10 @@ namespace blip {
     int     DeadWireSep     = 99;
     int     TPC             = -9;
     int     Plane           = -9;
-    int     NHits           = -9;
-    int     NWires          = -9;
-    int     NWiresNoisy     = -9;
-    int     NWiresBad     = -9;
+    int     NHits           = 0;
+    int     NWires          = 0;
+    int     NWiresNoisy     = 0;
+    int     NWiresBad       = 0;
     float   ADCs            = -999;
     float   Amplitude       = -999;
     float   Charge          = -999;
@@ -134,6 +134,7 @@ namespace blip {
     si_t    Wires;
     si_t    Chans;
     si_t    G4IDs;
+    vint_t  TrkIDs;
     std::map<int,TVector3> IntersectLocations;
   };
   
@@ -153,6 +154,8 @@ namespace blip {
     int       ProxTrkID       = -9;         // ID of closest track
     bool      inCylinder      = false;      // Is it in a cone/cylinder region? 
     int       TouchTrkID      = -9;         // Track ID of track that is touched
+    int       TrkID           = -9;         // Track ID of track that shares hits with blip
+    float     TrkIDFrac       = -9;         // Fraction of blip's hits that are in track
 
     TVector3  Position;                     // 3D position TVector3
     TVector3  PositionSCE;                  // 3D position following SCE spatial correction

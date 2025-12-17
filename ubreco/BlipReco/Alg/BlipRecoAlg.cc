@@ -366,9 +366,6 @@ namespace blip {
   //###########################################################
   void BlipRecoAlg::ProcessHits( const art::Event& evt ) {
     hitinfo.clear();
-    
-    
-
   }
 
 
@@ -383,9 +380,9 @@ namespace blip {
   //###########################################################
   void BlipRecoAlg::RunBlipReco( const art::Event& evt ) {
   
-    //std::cout<<"\n"
-    //<<"------------- BlipRecoAlg ---------------- \n"
-    //<<"Event "<<evt.id().event()<<" / run "<<evt.id().run()<<"\n";
+    std::cout<<"\n"
+    <<"------------- BlipRecoAlg ---------------- \n"
+    <<"Event "<<evt.id().event()<<" / run "<<evt.id().run()<<"\n";
   
     //=======================================
     // Reset things
@@ -426,8 +423,9 @@ namespace blip {
     
     
     if( !ranBlipTruth ) RunBlipTruth(evt);
-  
-    if( !ranHitProcess ) ProcessHits(evt);
+ 
+     
+    ProcessHits(evt);
 
     // -- geometry
     art::ServiceHandle<geo::Geometry> geom;
@@ -608,7 +606,7 @@ namespace blip {
     //=======================================
     // Map track IDs to the index in the vector
     //=======================================
-    //std::cout<<"Looping over tracks...\n";
+    std::cout<<"Looping over tracks...\n";
     //std::map<size_t,size_t> map_trkid_isMC;
     map_trkid_isMC.clear();
     map_trkid_index.clear();
@@ -631,7 +629,7 @@ namespace blip {
     std::map<int,std::vector<int>> planehitsMap;
     int nhits_untracked = 0;
 
-    //std::cout<<"Looping over "<<hitlist.size()<<" hits...\n";
+    std::cout<<"Looping over "<<hitlist.size()<<" hits...\n";
     for(size_t i=0; i<hitlist.size(); i++){
       auto const& thisHit = hitlist[i];
       int   chan    = thisHit->Channel();
@@ -995,8 +993,8 @@ namespace blip {
 
     for(auto& tpcMap : tpc_planeclustsMap ) { // loop on TPCs
      
-      //std::cout
-      //<<"Performing cluster matching in TPC "<<tpcMap.first<<", which has "<<tpcMap.second.size()<<" planes\n";
+      std::cout
+      <<"Performing cluster matching in TPC "<<tpcMap.first<<", which has "<<tpcMap.second.size()<<" planes\n";
       auto& planeMap = tpcMap.second;
       if( planeMap.find(fCaloPlane) != planeMap.end() ){
         int   planeA              = fCaloPlane;
@@ -1253,7 +1251,7 @@ namespace blip {
       //h_chan_nclusts->Fill(geom->PlaneWireToChannel(hitinfo[i].plane,hitinfo[i].wire));
     }
 
-    //std::cout<<"Blip calorimetry for "<<blips.size()<<"\n";
+    std::cout<<"Blip calorimetry for "<<blips.size()<<" blips\n";
 
     //*************************************************************************
     // Loop over the vector of blips and perform calorimetry calculation.
@@ -1270,7 +1268,7 @@ namespace blip {
       float Efield    = detProp->Efield();
       float EfieldSCE = detProp->Efield();
     
-      
+      std::cout<<"Blip "<<i<<"\n";
       //std::cout<<Efield<<"  "<<EfieldSCE<<"\n";
 
       // ----------------------------------------------------
@@ -1278,9 +1276,11 @@ namespace blip {
       // for YZ non-uniformity across the wireplane, which is pretty standard (procedure 
       // taken from CalibrationdEdx_module).
       blip.Charge = blip.clusters[fCaloPlane].Charge;
-      //std::cout<<blip.Charge<<" "<<blip.Position.Y()<<"  "<<blip.Position.Z()<<"\n";
-      if( fYZUniformityCorr ) blip.Charge *= tpcCalib_provider.YZdqdxCorrection(fCaloPlane,blip.Position.Y(),blip.Position.Z());
-      //std::cout<<"Uniformity correction applied\n";
+      //if( evt.id().run() == 14516 ) continue;
+      std::cout<<"Run "<<evt.id().run()<<"\n";
+      std::cout<<blip.Charge<<" "<<blip.Position.Y()<<"  "<<blip.Position.Z()<<"\n";
+      if( fYZUniformityCorr && blip.Position.Z() > 2 ) blip.Charge *= tpcCalib_provider.YZdqdxCorrection(fCaloPlane,blip.Position.Y(),blip.Position.Z());
+      std::cout<<"Uniformity correction applied\n";
 
       // ================================================================================
       // Calculate blip energy assuming T = T_beam (eventually can do more complex stuff
@@ -1297,17 +1297,18 @@ namespace blip {
         float t = blip.Time*1e-3;
         float tau = lifetime_provider.Lifetime();
         blip.ChargeCorr = std::max(0.,(double)blip.Charge) * exp( t / tau );
-        //std::cout<<"Lifetime correction applied\n";
+        std::cout<<"Lifetime correction applied, lifetime "<<tau<<"   q0 = "<<blip.Charge<<"   qcorr = "<<blip.ChargeCorr<<"\n";
       }
 
       // --- SCE corrections ---
       geo::Point_t point( blip.Position.X(),blip.Position.Y(),blip.Position.Z() );
       if( fSCECorr ) {
-
+        
         // 1) Spatial correction
         //      TODO: Deal with cases where X falls outside AV (diffuse out-of-time signal)
         //            For example, maybe re-assign to center of drift volume?
         if( SCE_provider->EnableCalSpatialSCE() ) {
+          std::cout<<"Doing SCE spatial correction\n";
           geo::Vector_t loc_offset = SCE_provider->GetCalPosOffsets(point);
           point.SetXYZ(point.X()-loc_offset.X(),point.Y()+loc_offset.Y(),point.Z()+loc_offset.Z());
           blip.PositionSCE.SetXYZ(point.X(),point.Y(),point.Z());
@@ -1323,13 +1324,14 @@ namespace blip {
         //   - Blips can have negative 'X' if the T0 correction isn't applied. Obviously 
         //     the SCE map will return (0,0,0) for these points. Beware!
         if( SCE_provider->EnableCalEfieldSCE() ) {
+          std::cout<<"Doing SCE E-field magnitude correction\n";
           auto const field_offset = SCE_provider->GetCalEfieldOffsets(point);
           EfieldSCE = Efield*std::hypot(1+field_offset.X(),field_offset.Y(),field_offset.Z());
         }
 
       }
 
-
+      std::cout<<"Calculating recomb using "<<Efield<<", "<<EfieldSCE<<"\n";
       // METHOD 1 - assume a recombination
       float recomb    = ModBoxRecomb(fCalodEdx,Efield);
       float recombSCE = ModBoxRecomb(fCalodEdx,EfieldSCE);
